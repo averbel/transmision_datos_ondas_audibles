@@ -9,6 +9,8 @@ entre grupos.
 
 from __future__ import annotations
 
+from functools import lru_cache
+
 import numpy as np
 
 FS = 48000
@@ -70,16 +72,7 @@ def _as_bytes(data) -> bytes:
         return bytes(data)
     if isinstance(data, np.ndarray) and data.dtype == np.uint8:
         return data.tobytes()
-    seq = [int(v) for v in data]
-    if seq and all(v in (0, 1) for v in seq):
-        out = bytearray()
-        for i in range(0, len(seq), 8):
-            byte = 0
-            for bit in seq[i:i + 8]:
-                byte = (byte << 1) | bit
-            out.append(byte)
-        return bytes(out)
-    return bytes(seq)
+    return bytes(int(v) for v in data)
 
 
 def _tone_matrix(bins: list[int]) -> np.ndarray:
@@ -88,9 +81,9 @@ def _tone_matrix(bins: list[int]) -> np.ndarray:
     return TONE_AMP * np.sin(2.0 * np.pi * n * freqs / SYMBOL)
 
 
-def modulate(bits_or_bytes) -> np.ndarray:
-    """Convierte bytes (o bits empaquetados MSB primero) en una senal float32."""
-    data = _as_bytes(bits_or_bytes)
+def modulate(data_in) -> np.ndarray:
+    """Convierte bytes (o una secuencia de enteros 0-255) en una senal float32."""
+    data = _as_bytes(data_in)
     symbols = np.frombuffer(data, dtype=np.uint8)
     high = symbols >> 4
     low = symbols & 0x0F
@@ -109,13 +102,20 @@ def modulate(bits_or_bytes) -> np.ndarray:
     return out.astype(np.float32)
 
 
-def _find_chirp(signal: np.ndarray, template: np.ndarray):
+@lru_cache(maxsize=8)
+def _template_fft(reverse: bool, nfft: int) -> np.ndarray:
+    template = _chirp()[::-1] if reverse else _chirp()
+    return np.fft.rfft(template[::-1], nfft)
+
+
+def _find_chirp(signal: np.ndarray, reverse: bool = False):
+    template = _chirp()[::-1] if reverse else _chirp()
     n = len(signal)
     length = len(template)
     if n < length:
         return None
     nfft = 1 << (n + length - 2).bit_length()
-    corr = np.fft.irfft(np.fft.rfft(signal, nfft) * np.fft.rfft(template[::-1], nfft), nfft)
+    corr = np.fft.irfft(np.fft.rfft(signal, nfft) * _template_fft(reverse, nfft), nfft)
     corr = corr[length - 1:n]
     csum = np.concatenate(([0.0], np.cumsum(signal * signal)))
     energy = csum[length:] - csum[:-length]
@@ -139,12 +139,8 @@ def demodulate(signal) -> bytes | None:
     s = np.asarray(signal, dtype=np.float64).ravel()
     if s.size == 0:
         return None
-    peak = float(np.max(np.abs(s)))
-    if peak > 2.0:
-        s = s / 32768.0
-
     chirp = _chirp()
-    found = _find_chirp(s, chirp)
+    found = _find_chirp(s)
     if found is None:
         return None
     start, score = found
@@ -155,7 +151,7 @@ def demodulate(signal) -> bytes | None:
     if data_start >= len(s):
         return b""
 
-    end_found = _find_chirp(s[data_start:], chirp[::-1])
+    end_found = _find_chirp(s[data_start:], reverse=True)
     if end_found is not None and end_found[1] >= SYNC_THRESHOLD:
         end_start = data_start + end_found[0]
         count = max(0, (end_start - GUARD - data_start) // SYMBOL)

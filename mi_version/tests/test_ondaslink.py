@@ -88,3 +88,38 @@ def test_reassembler_desordenado_y_duplicado():
     assert reassembler.push(frames[0]) is None
     assert reassembler.push(frames[1]) is None
     assert reassembler.push(frames[2]) == b"AAABBBCCC"
+
+
+def test_mensaje_vacio():
+    assert receive(send(b"", None, "normal"), None) == b""
+
+
+def test_as_bytes_no_reinterpreta_ceros_y_unos():
+    from ondaslink import modem
+    assert modem._as_bytes([0, 1]) == b"\x00\x01"
+    assert modem._as_bytes([1, 0, 1]) == b"\x01\x00\x01"
+
+
+def test_perfil_que_no_coincide():
+    raw = frame.pack_message(b"hola", None, 1, 48, 10)
+    assert frame.decode_stream(raw, None, [api.PROFILES["fast"]]) is None
+
+
+def test_senal_int16():
+    msg = _mensaje(16, seed=11)
+    pcm = (send(msg, None, "normal") * 32767).astype(np.int16)
+    assert receive(pcm, None) == msg
+
+
+def test_cli_ida_y_vuelta(tmp_path, capsysbinary):
+    from ondaslink import cli
+    wav = str(tmp_path / "t.wav")
+    assert cli.main(["encode", "hola mundo", wav, "--key", "K"]) == 0
+    assert cli.main(["decode", wav, "--key", "K"]) == 0
+    assert capsysbinary.readouterr().out == b"hola mundo\n"
+    assert cli.main(["decode", wav, "--key", "MAL"]) == 1
+
+
+def test_cli_wav_invalido(tmp_path):
+    from ondaslink import cli
+    assert cli.main(["decode", str(tmp_path / "no_existe.wav")]) == 1

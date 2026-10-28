@@ -1,4 +1,11 @@
-"""Tramas fragmentadas con cabecera, HMAC truncado y proteccion Reed-Solomon."""
+"""Tramas fragmentadas con cabecera, HMAC truncado y proteccion Reed-Solomon.
+
+Limites conocidos: el HMAC de 4 bytes autentica pero no cifra (el payload viaja
+en claro), no hay contador ni marca de tiempo (una trama grabada se puede
+repetir), msg_id ocupa 1 byte y con key=None se firma con clave vacia, asi que
+cualquiera puede fabricar tramas validas. Un mensaje es un solo flujo: si un
+bloque RS falla se descarta completo.
+"""
 
 from __future__ import annotations
 
@@ -142,25 +149,20 @@ def decode_stream(raw: bytes, key: bytes | None,
         max_blocks = len(raw) // block_len
         if max_blocks == 0:
             continue
-        for nblocks in range(max_blocks, 0, -1):
-            frames = []
-            valid = True
-            for i in range(nblocks):
-                block = raw[i * block_len:(i + 1) * block_len]
+        decoded: dict[int, dict | None] = {}
+
+        def block_frame(i: int) -> dict | None:
+            if i not in decoded:
                 try:
-                    plain = rs.decode(block, parity)
+                    plain = rs.decode(raw[i * block_len:(i + 1) * block_len], parity)
+                    decoded[i] = parse_fragment(plain, key, profile_id, chunk)
                 except ValueError:
-                    valid = False
-                    break
-                if len(plain) != data_len:
-                    valid = False
-                    break
-                frame = parse_fragment(plain, key, profile_id, chunk)
-                if frame is None:
-                    valid = False
-                    break
-                frames.append(frame)
-            if not valid:
+                    decoded[i] = None
+            return decoded[i]
+
+        for nblocks in range(max_blocks, 0, -1):
+            frames = [block_frame(i) for i in range(nblocks)]
+            if any(f is None for f in frames):
                 continue
             reassembler = Reassembler()
             result = None

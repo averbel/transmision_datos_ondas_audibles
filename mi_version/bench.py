@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import sys
+
 import numpy as np
 
 from ondaslink import PROFILES, receive, send
+from ondaslink.modem import FS
 
 SEED = 20261028
 SNRS = list(range(-12, 13, 2))
@@ -25,9 +28,9 @@ def main() -> None:
     print("profile,snr_db,trials,success")
     bps: dict[str, float] = {}
 
-    for profile, (_, _, _) in PROFILES.items():
+    for profile in PROFILES:
         sample = send(bytes(rng.integers(0, 256, MSG_LEN, dtype=np.uint8)), None, profile)
-        duration = len(sample) / 48000.0
+        duration = len(sample) / FS
         bps[profile] = MSG_LEN * 8 / duration
         for snr in SNRS:
             ok = 0
@@ -39,10 +42,10 @@ def main() -> None:
                     ok += 1
             print(f"{profile},{snr},{TRIALS},{ok}")
 
-    print()
-    print("bps_netos,profile,value")
+    # Segunda tabla por stderr para que stdout siga siendo un CSV valido.
+    print("profile,bps_netos", file=sys.stderr)
     for profile, value in bps.items():
-        print(f"bps_netos,{profile},{value:.3f}")
+        print(f"{profile},{value:.3f}", file=sys.stderr)
 
 
 if __name__ == "__main__":

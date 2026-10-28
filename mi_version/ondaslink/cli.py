@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import wave
 
@@ -50,19 +51,25 @@ def main(argv: list[str] | None = None) -> int:
     dec.add_argument("--key", default=None)
 
     args = parser.parse_args(argv)
-    if args.command == "encode":
-        key = None if args.key is None else args.key.encode("utf-8")
-        signal = api.send(args.text.encode("utf-8"), key, args.profile)
-        _write_wav(args.out, signal)
-        return 0
+    # La clave puede venir de ONDASLINK_KEY para no dejarla en el historial ni en la lista de procesos.
+    raw_key = args.key if args.key is not None else os.environ.get("ONDASLINK_KEY")
+    key = None if raw_key is None else raw_key.encode("utf-8")
+    try:
+        if args.command == "encode":
+            signal = api.send(args.text.encode("utf-8"), key, args.profile)
+            _write_wav(args.out, signal)
+            return 0
 
-    key = None if args.key is None else args.key.encode("utf-8")
-    signal = _read_wav(args.infile)
+        signal = _read_wav(args.infile)
+    except (ValueError, OSError, wave.Error) as exc:
+        print("error: %s" % exc, file=sys.stderr)
+        return 1
     message = api.receive(signal, key)
     if message is None:
         print("error: no se pudo decodificar", file=sys.stderr)
         return 1
-    print(message.decode("utf-8", errors="replace"))
+    sys.stdout.buffer.write(message + b"\n")
+    sys.stdout.buffer.flush()
     return 0
 
 

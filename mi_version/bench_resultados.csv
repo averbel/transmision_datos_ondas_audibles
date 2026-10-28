@@ -38,8 +38,3 @@ fast,6,100,100
 fast,8,100,100
 fast,10,100,100
 fast,12,100,100
-
-bps_netos,profile,value
-bps_netos,robust,64.646
-bps_netos,normal,72.453
-bps_netos,fast,76.130
