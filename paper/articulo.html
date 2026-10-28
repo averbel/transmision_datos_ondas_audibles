@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Transmisión de datos mediante ondas audibles</title>
+<style>
+  @page { size: Letter; margin: 0.75in 0.75in 0.9in 0.75in;
+          @bottom-center { content: counter(page); font: 8pt "Times New Roman", serif; } }
+  html { font-family: "Times New Roman", Times, serif; font-size: 10pt; color: #000; }
+  body { margin: 0; }
+  header { text-align: center; margin-bottom: 10pt; }
+  header h1 { font-size: 22pt; font-weight: normal; line-height: 1.1; margin: 0 0 8pt; }
+  header .author { font-size: 11pt; margin: 0; }
+  header .aff { font-size: 9pt; font-style: italic; margin: 0; }
+  main { column-count: 2; column-gap: 0.25in; text-align: justify; hyphens: auto; line-height: 1.12; }
+  p { margin: 0 0 4pt; text-indent: 1.5em; }
+  p.ni, .abs p, figcaption, .tcap { text-indent: 0; }
+  .abs p { font-size: 9pt; font-weight: bold; line-height: 1.1; }
+  .abs p span { font-weight: normal; }
+  h2 { font-size: 9pt; font-weight: normal; text-align: center; text-transform: uppercase;
+       margin: 9pt 0 4pt; break-after: avoid; }
+  h3 { font-size: 10pt; font-weight: normal; font-style: italic; margin: 6pt 0 3pt; break-after: avoid; }
+  figure { margin: 6pt 0; break-inside: avoid; text-align: center; }
+  figure img { width: 100%; }
+  figcaption { font-size: 8pt; text-align: center; margin-top: 2pt; }
+  .tcap { font-size: 8pt; text-align: center; margin: 7pt 0 2pt; text-transform: uppercase; break-after: avoid; }
+  table { border-collapse: collapse; width: 100%; font-size: 7.5pt; margin-bottom: 3pt; break-inside: avoid; }
+  th { border-top: 0.8pt solid #000; border-bottom: 0.5pt solid #000; padding: 1.5pt 2pt; }
+  td { padding: 1.2pt 2pt; vertical-align: top; text-align: center; }
+  td:first-child, th:first-child { text-align: left; }
+  tr:last-child td { border-bottom: 0.8pt solid #000; }
+  .frame { display: flex; font-size: 7pt; text-align: center; margin: 0 0 2pt; }
+  .frame div { border: 0.6pt solid #000; padding: 3pt 2pt; }
+  code { font-family: "Courier New", monospace; font-size: 8.5pt; }
+  .refs p { font-size: 8pt; text-indent: -1.9em; padding-left: 1.9em; margin: 0 0 2pt; line-height: 1.08; }
+  .span { column-span: all; }
+  em.m { font-style: italic; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Transmisión de datos mediante ondas audibles: fundamentos, estado del arte y evaluación del sistema ggwave</h1>
+  <p class="author">Andrés Felipe Verbel Pacheco</p>
+  <p class="aff">Universidad de la Costa (CUC), Barranquilla, Colombia &middot; averbel1@cuc.edu.co</p>
+</header>
+
+<main>
+<div class="abs">
+<p>Resumen&mdash;<span>La transmisión de datos por sonido permite comunicar dispositivos que solo cuentan con altavoz y micrófono, sin radio ni red. Este trabajo revisa los fundamentos físicos del canal acústico aéreo, las técnicas de modulación y codificación empleadas y los resultados cuantitativos publicados entre 2001 y 2026, que van de 8 bps a más de 47 kbps según la banda, la distancia y el hardware. Como caso de estudio se analiza <b>ggwave</b>, una biblioteca abierta de FSK multitono con corrección de errores Reed&ndash;Solomon, mediante lectura de su código fuente, un banco de pruebas propio con ruido gaussiano simulado y los datos de una evaluación independiente con más de 11 000 transmisiones reales entre teléfonos [3]. Se observa un compromiso sistemático entre tasa, alcance, robustez y audibilidad: los esquemas más rápidos dependen de bandas casi ultrasónicas, hardware específico y ecualización, mientras que los más robustos rara vez superan unos cientos de bps. Se identifican brechas (seguridad, adaptación al canal, validación en entornos reales) que orientan el desarrollo de una implementación propia.</span></p>
+<p>Palabras clave&mdash;<span><i>comunicación acústica, audio networking, FSK, OFDM, Reed&ndash;Solomon, canal multitrayecto, ggwave.</i></span></p>
+<p>Abstract&mdash;<span>Data-over-sound lets devices that only have a speaker and a microphone exchange information without radio or network infrastructure. This paper reviews the physics of the airborne acoustic channel, the modulation and coding techniques in use, and quantitative results published between 2001 and 2026, ranging from 8 bps to over 47 kbps depending on band, distance and hardware. The open-source library <b>ggwave</b> (multi-tone FSK with Reed&ndash;Solomon coding) is studied as a case through source-code analysis, a custom simulated-noise benchmark and data from an independent evaluation with more than 11,000 real smartphone transmissions [3]. A consistent trade-off between rate, range, robustness and audibility emerges. Gaps in security, channel adaptation and real-environment validation are identified to guide a new implementation.</span></p>
+<p>Index Terms&mdash;<span><i>acoustic communication, audio networking, FSK, Reed&ndash;Solomon, multipath channel, ggwave.</i></span></p>
+</div>
+
+<h2>I. Introducción</h2>
+<p>La comunicación mediante sonido, denominada <i>audio networking</i>, emplea altavoces y micrófonos ya presentes en teléfonos, computadoras y dispositivos IoT para intercambiar datos sin infraestructura de radio [1]. Sus ventajas son el hardware ubicuo, el bajo consumo y la delimitación física natural del alcance, pues el sonido se atenúa con facilidad al atravesar paredes. Sus desventajas son la baja tasa de datos y la sensibilidad al ruido y a la reverberación. Los primeros módems acústicos para computación ubicua se documentaron a comienzos de los años 2000 [2], y la literatura reciente sigue señalando el mismo problema: la mayoría de los esquemas funciona en el laboratorio pero se degrada en entornos reales [3].</p>
+<p>Las aplicaciones documentadas incluyen emparejamiento y pagos de proximidad sin NFC [11], verificación de cercanía entre dispositivos [12] y balizas de ubicación [1]. Este trabajo tiene tres objetivos: (i) resumir los fundamentos físicos y de comunicaciones del canal acústico; (ii) consolidar, con datos publicados y verificables, el estado del arte en tasa, alcance y robustez; y (iii) evaluar un sistema abierto representativo, ggwave [4], combinando análisis de código, mediciones propias y los resultados de un estudio independiente. El objetivo final es servir de base técnica para una implementación propia.</p>
+
+<h2>II. Metodología de la revisión</h2>
+<p>La literatura se localizó el 28 de octubre de 2026 con búsquedas web sobre arXiv, Crossref, ACM Digital Library, IEEE Xplore (por DOI), PoPETs y repositorios de los autores, con términos como <i>acoustic data transmission</i>, <i>audio networking</i>, <i>near-ultrasonic communication</i> y <i>smartphone</i>. Se incluyeron trabajos que reportan tasa de datos o tasa de error sobre aire con altavoces y micrófonos de consumo. Los metadatos bibliográficos (autores, título, publicación, páginas, DOI) se contrastaron con Crossref o con la página del editor; las cifras se tomaron de los resúmenes o del texto completo de cada artículo y se citan tal como se publicaron. No es una revisión sistemática exhaustiva: no se aplicó un protocolo PRISMA y es posible que existan trabajos relevantes no incluidos.</p>
+
+<h2>III. Fundamentos del canal acústico</h2>
+<h3>A. Propagación y atenuación</h3>
+<p>En aire a 20&nbsp;&deg;C el sonido se propaga a unos 343 m/s [5]. En campo libre, la presión de una fuente puntual decae con la inversa de la distancia, es decir, unos 6&nbsp;dB por cada duplicación de distancia [5]; la absorción del aire añade pérdidas que crecen con la frecuencia, lo que limita el alcance de los esquemas de alta frecuencia.</p>
+<h3>B. Presupuesto de enlace ilustrativo</h3>
+<p>Si la SNR a 1 m es <i>S</i><sub>1</sub>, a una distancia <i>d</i> en campo libre vale <i>S</i>(<i>d</i>) = <i>S</i><sub>1</sub> &minus; 20&nbsp;log<sub>10</sub>(<i>d</i>/1&nbsp;m). Pasar de 1 m a 20 m cuesta 26 dB, un valor comparable al alcance de 20 m que [3] reporta para la variante inaudible de ggwave en oficina. Como la transición de fallo a éxito de ggwave en simulación ocupa unos 6 dB (Sección VII-C), equivalente a una duplicación de la distancia, cabe esperar una caída abrupta con la distancia en vez de una degradación gradual. Este cálculo ignora reverberación, ruido ambiental y directividad, y es solo orientativo.</p>
+<h3>C. Multitrayecto y reverberación</h3>
+<p>En interiores, la señal llega al receptor por la ruta directa y por reflexiones. Una trayectoria reflejada que recorra 3 m más que la directa llega con un retardo de 3/343 &asymp; 8,7 ms. Cuando este retardo es comparable a la duración del símbolo se produce interferencia entre símbolos; por eso los sistemas de baja tasa usan símbolos largos (decenas a cientos de milisegundos). Putz <i>et al.</i> identifican la propagación multitrayecto interior como la principal causa de fallo de los esquemas que evaluaron [3], y Tabak <i>et al.</i> recurren a ecualización adaptativa por la misma razón [7].</p>
+<h3>D. Banda audible, casi ultrasónica y hardware</h3>
+<p>El rango audible convencional va de 20 Hz a 20 kHz y la sensibilidad del oído es máxima entre aproximadamente 2 y 5 kHz [6]; transmitir en esa zona es eficaz pero molesto. Para evitarlo se emplean bandas cercanas a 18&ndash;22 kHz, apenas audibles para la mayoría de adultos, aunque dependientes de que el altavoz y el micrófono respondan allí [3], [7]. La respuesta en frecuencia de los altavoces y micrófonos integrados no es plana en esa región [7] y varía entre modelos de teléfono, por lo que el desempeño depende del par emisor&ndash;receptor [3].</p>
+
+<h2>IV. Modulación y codificación</h2>
+<h3>A. Esquemas de modulación</h3>
+<p>La Tabla I resume las familias de modulación empleadas en los sistemas revisados. La modulación por desplazamiento de frecuencia múltiple (MFSK) es la más común por su robustez: para FSK binaria no coherente la probabilidad de error de bit es <i>P<sub>b</sub></i> = &frac12; exp(&minus;<i>E<sub>b</sub></i>/2<i>N</i><sub>0</sub>) [8], donde <i>E<sub>b</sub></i>/<i>N</i><sub>0</sub> es la energía por bit sobre la densidad espectral de ruido. Los esquemas coherentes (PSK, OFDM) alcanzan mayor eficiencia espectral, pero exigen sincronización y ecualización precisas [7], [8].</p>
+<div class="tcap">TABLA I. Familias de modulación en la literatura acústica</div>
+<table>
+<tr><th>Esquema</th><th>Idea</th><th>Ejemplos</th></tr>
+<tr><td>OOK / ASK</td><td>Presencia o ausencia de portadora</td><td>Portadoras de 10 y 21,2 kHz [1]</td></tr>
+<tr><td>DTMF</td><td>Par de tonos por símbolo</td><td>Telefonía [1]</td></tr>
+<tr><td>MFSK</td><td>Un tono entre <i>M</i> por símbolo</td><td>ggwave, PriWhisper [3]</td></tr>
+<tr><td>Chirp (CSS/BOK)</td><td>Barridos de frecuencia</td><td>Lee 2015, HRCSS [3]</td></tr>
+<tr><td>DSSS + MFSK</td><td>Espectro ensanchado</td><td>Nearby [3], [12]</td></tr>
+<tr><td>OFDM / PSK</td><td>Muchas subportadoras, coherente</td><td>Gonçalves [3], BatComm [13], UltraComm [14]</td></tr>
+<tr><td>Coherente + ecualización</td><td>Estimación del canal</td><td>Tabak [7]</td></tr>
+</table>
+<h3>B. Corrección de errores y límite de capacidad</h3>
+<p>Los códigos Reed&ndash;Solomon [10] añaden 2<i>t</i> bytes de paridad y corrigen hasta <i>t</i> bytes erróneos por bloque [8], lo que los hace adecuados frente a ráfagas de error. El límite teórico de capacidad de un canal con ancho de banda <i>B</i> y relación señal-ruido SNR es <i>C</i> = <i>B</i> log<sub>2</sub>(1 + SNR) [9]. Para <i>B</i> = 4500 Hz (la banda audible usada por ggwave) y SNR = 10 dB, <i>C</i> &asymp; 15,6 kbps; con SNR = 0 dB, <i>C</i> = 4,5 kbps. Los sistemas prácticos revisados operan en el rango de unos pocos a algunos cientos de bps, es decir, uno o dos órdenes de magnitud por debajo, a cambio de robustez y simplicidad.</p>
+
+<h2>V. Estado del arte: datos publicados</h2>
+<p>La Tabla II reúne cifras reportadas por los propios autores o por evaluaciones independientes. Las condiciones difieren (distancia, hardware, entorno), por lo que las cifras no son directamente comparables y se citan tal como se publicaron.</p>
+<div class="tcap">TABLA II. Tasas y condiciones reportadas</div>
+<table>
+<tr><th>Sistema (año)</th><th>Banda</th><th>Tasa y condiciones</th><th>Fuente</th></tr>
+<tr><td>DTMF (2005)</td><td>Audible</td><td>20 bps a 3 m; error de símbolo 0,006 %</td><td>[1]</td></tr>
+<tr><td>OOK 10 kHz (2005)</td><td>10 kHz</td><td>251 bps a 30 cm; BER 4,4&middot;10<sup>&minus;5</sup></td><td>[1]</td></tr>
+<tr><td>OOK 21,2 kHz (2005)</td><td>21,2 kHz</td><td>8 bps a 3,4 m en oficina</td><td>[1]</td></tr>
+<tr><td>Tonos de llamada (2005)</td><td>Audible</td><td>83 bps a 2 cm; BER &le; 0,001 %</td><td>[1]</td></tr>
+<tr><td>Digital Voices (2001)</td><td>1&ndash;3 kHz</td><td>80 bps netos</td><td>[3]</td></tr>
+<tr><td>Dhwani (2013)</td><td>&mdash;</td><td>hasta 2,4 kbps</td><td>[11]</td></tr>
+<tr><td>Nearby (2018)</td><td>18,5&ndash;20 kHz</td><td>84 bps netos</td><td>[3], [12]</td></tr>
+<tr><td>PriWhisper (2014)</td><td>9&ndash;17 kHz</td><td>729 bps netos</td><td>[3], [15]</td></tr>
+<tr><td>Tabak <i>et al.</i> (2021)</td><td>18&ndash;20 kHz</td><td>4 kbps hasta 5 m</td><td>[7]</td></tr>
+<tr><td>ggwave (2020)</td><td>1,8&ndash;6,3 / 15&ndash;19,5 kHz</td><td>268 bps netos</td><td>[3], [4]</td></tr>
+<tr><td>BatComm (2020)</td><td>Ultrasónica</td><td>&gt;47 kbps a 10 cm; alcance de sala (~2 m) según el resumen</td><td>[13]</td></tr>
+<tr><td>UltraComm (2024)</td><td>&le; 20 kHz</td><td>hasta 16,24 kbps</td><td>[14]</td></tr>
+</table>
+<figure>
+  <img src="fig_rates.png" alt="Tasas netas publicadas">
+  <figcaption>Fig. 1. Tasas netas publicadas (escala log). Azul: [1]; gris: [3]; rojo: ggwave [3]; verde: [7], [11].</figcaption>
+</figure>
+<p>Tres observaciones se desprenden de los datos. Primero, las tasas netas de los sistemas robustos están entre 8 y unos 750 bps, y los kilobits por segundo aparecen con ecualización coherente en banda casi ultrasónica [7], con hardware específico o rango muy corto [13], [14] o con técnicas especiales como Dhwani [11]. Segundo, la distancia importa: [13] reporta más de 47 kbps a 10 cm, mientras que a metros las tasas caen en uno o dos órdenes de magnitud. Tercero, Putz <i>et al.</i> revisaron 31 estudios y ninguno ofrecía código accesible [3], lo que dificulta reproducir y comparar resultados.</p>
+<h3>A. Evaluación independiente en teléfonos reales</h3>
+<p>Putz <i>et al.</i> [3] re-implementaron o reunieron ocho sistemas y los probaron con más de 11 000 transmisiones entre teléfonos, en oficinas y en una cámara anecoica. Con altavoz y micrófono de estudio a 50 cm, seis esquemas lograron 0 % de error total y uno 0,8 %. En oficina, todos salvo Digital Voices mantuvieron menos de 0,5 % hasta 10 cm, y el error creció con la distancia por multitrayecto y ruido. Entre 21 pares de teléfonos, el error de varios esquemas varió de 3 % a 32 %, y colocar el teléfono en el bolsillo degradó a todos. Estas cifras son la referencia más cercana a un entorno real y sirven para contrastar los resultados en simulación.</p>
+<h3>B. Compromisos de diseño</h3>
+<div class="tcap">TABLA III. Compromisos observados en la literatura</div>
+<table>
+<tr><th>Opción</th><th>Ventaja</th><th>Limitación</th></tr>
+<tr><td>Banda audible</td><td>Cualquier altavoz y micrófono; símbolos bien reproducidos</td><td>Audible y molesta; ggwave audible llegó a 1 m en oficina y fue inutilizable con ruido ambiental [3]</td></tr>
+<tr><td>Casi ultrasónica (18&ndash;22 kHz)</td><td>Silenciosa; ggwave inaudible llegó a 20 m en oficina [3]</td><td>Depende de la respuesta del hardware [7]</td></tr>
+<tr><td>MFSK no coherente</td><td>Simple y robusto</td><td>Cientos de bps como máximo [3]</td></tr>
+<tr><td>OFDM / coherente</td><td>Kilobits por segundo [7], [13], [14]</td><td>Exige ecualización, corto alcance o hardware específico</td></tr>
+</table>
+
+<h2>VI. Seguridad y privacidad</h2>
+<p>El canal acústico es de difusión: cualquier micrófono en el alcance recibe la señal. Dhwani [11] y PriWhisper [15] abordan la confidencialidad con interferencia deliberada (<i>jamming</i> amistoso) en lugar de claves. En el plano de la privacidad, Mavroudis <i>et al.</i> analizaron aplicaciones Android que usan balizas ultrasónicas y mostraron ataques como la desanonimización de usuarios de Tor, la inyección de balizas falsas y la fuga de información privada [16]. Los autores señalan que, sin soporte del sistema operativo, una aplicación con balizas ultrasónicas necesita acceso total al micrófono, y proponen estandarizar las balizas y ofrecer permisos que permitan suprimir frecuencias ultrasónicas.</p>
+
+<h2>VII. Estudio de caso: ggwave</h2>
+<h3>A. Arquitectura</h3>
+<p>ggwave [4] es una biblioteca en C/C++ con licencia MIT (commit <code>060aec7</code>, 16/04/2026) que genera y analiza las ondas crudas; el usuario aporta el audio. Usa una FFT real de Ooura [17] y un código Reed&ndash;Solomon de terceros. Define 12 protocolos predefinidos en cuatro familias (audible, ultrasónica, DT y MT) con tres velocidades. A 48 kHz y 1024 muestras por trama, una trama dura 21,33 ms y cada contenedor de la FFT ocupa 46,875 Hz.</p>
+<p>Cada byte se divide en dos nibbles y cada nibble elige uno de 16 tonos dentro de su propio grupo; un símbolo de 3 bytes activa 6 tonos de 96 posibles. La carga se mezcla con una secuencia fija de 64 bytes (XOR) para repartir la energía, lo que no constituye cifrado. El mensaje va entre dos marcadores de 16 tramas con patrón de tonos alternados (Fig. 2); el receptor los detecta comparando contenedores vecinos con un umbral de razón (3,0 por defecto). La longitud se protege con 2 bytes de paridad, y la carga con <i>ECC</i> = 2 bytes si <i>L</i> &lt; 4 y máx(4, 2&lfloor;<i>L</i>/5&rfloor;) en otro caso (&asymp;40 % de redundancia). El máximo es de 140 bytes en modo variable.</p>
+<figure>
+  <div class="frame">
+    <div style="flex:2;background:#D9E2F3">Marcador inicio (16 tramas)</div>
+    <div style="flex:2.6;background:#FFF2CC">Longitud + 2 B RS</div>
+    <div style="flex:4;background:#E2EFDA">Carga útil (&le;140 B) + ECC Reed&ndash;Solomon</div>
+    <div style="flex:2;background:#D9E2F3">Marcador fin (16 tramas)</div>
+  </div>
+  <figcaption>Fig. 2. Estructura de una transmisión de ggwave (longitud variable).</figcaption>
+</figure>
+<h3>B. Tasas derivadas del código</h3>
+<p>La duración total es (2&middot;16 + <i>extra</i>&middot;&lceil;(<i>L</i> + 3 + <i>ECC</i>)/<i>bytesPerTx</i>&rceil;&middot;<i>framesPerTx</i>) tramas. Con ello se obtienen las cifras de la Tabla IV, que se verificaron compilando la biblioteca: las duraciones medidas coincidieron exactamente. Las 32 tramas de marcadores (&asymp; 0,68 s) penalizan los mensajes cortos. La tasa bruta máxima, 46,9 B/s (375 bps) en <i>Fastest</i>, equivale a solo el 2,4 % de la capacidad de Shannon de la Sección IV-B para SNR = 10 dB, lo que ilustra el margen que se cede por robustez.</p>
+<div class="tcap">TABLA IV. Protocolos de ggwave (f<sub>s</sub> = 48 kHz): tasa y duración</div>
+<table>
+<tr><th>Protocolo</th><th>Banda (Hz)</th><th>Bruta (B/s)</th><th>L = 16 B</th><th>L = 140 B</th></tr>
+<tr><td>Audible Normal</td><td>1875&ndash;6375</td><td>15,6</td><td>2,41 s / 6,6</td><td>13,55 s / 10,3</td></tr>
+<tr><td>Audible Fast</td><td>1875&ndash;6375</td><td>23,4</td><td>1,83 s / 8,7</td><td>9,26 s / 15,1</td></tr>
+<tr><td>Audible Fastest</td><td>1875&ndash;6375</td><td>46,9</td><td>1,26 s / 12,7</td><td>4,97 s / 28,2</td></tr>
+<tr><td>Ultrasound (3 vel.)</td><td>15000&ndash;19500</td><td>igual</td><td>igual</td><td>igual</td></tr>
+<tr><td>DT Normal</td><td>1125&ndash;2625</td><td>5,2</td><td>5,48 s / 2,9</td><td>38,89 s / 3,6</td></tr>
+<tr><td>DT Fast</td><td>1125&ndash;2625</td><td>7,8</td><td>3,88 s / 4,1</td><td>26,15 s / 5,4</td></tr>
+<tr><td>DT Fastest</td><td>1125&ndash;2625</td><td>15,6</td><td>2,28 s / 7,0</td><td>13,42 s / 10,4</td></tr>
+</table>
+<p class="ni" style="font-size:8pt;text-align:center">Celdas: duración / tasa efectiva en B/s. Cálculo propio y medición con el código de [4].</p>
+<h3>C. Mediciones en canal simulado</h3>
+<p>Se codificaron mensajes aleatorios de 16 bytes (volumen 25 %, formato F32, 48 kHz) y se les sumó ruido blanco gaussiano con SNR calculada sobre la potencia media en toda la banda (0&ndash;24 kHz), con 100 intentos por punto y una semilla fija. La transición de fallo a éxito total ocurre en unos 6 dB (Fig. 3): entre &minus;12 y &minus;6 dB en los protocolos audibles y entre &minus;6 y &minus;3 dB en <i>DT Fast</i>; por debajo de &minus;18 dB el éxito fue 0 %. El umbral es bajo porque la SNR se define sobre 24 kHz mientras cada tono se integra en 46,9 Hz (ganancia de procesamiento del orden de 27 dB, pues 24&nbsp;000/46,9 &asymp; 512). <i>Audible Fastest</i> resultó más robusto que <i>Normal</i> a &minus;9 dB (98 % frente a 86 %), contrario a lo esperable, y no se investigó la causa.</p>
+<figure>
+  <img src="fig_snr.png" alt="Éxito frente a SNR">
+  <figcaption>Fig. 3. Éxito de decodificación frente a SNR de banda ancha (L = 16 B, n = 100). Medición propia.</figcaption>
+</figure>
+<p>Con señal digital sin ruido, <i>DT Fast</i> no se decodificó en ninguna de las siete longitudes y <i>Audible Normal</i> falló una vez; con ruido añadido <i>DT Fast</i> sí funcionó, posiblemente porque el detector de marcadores se confunde cuando los contenedores vecinos son casi cero (hipótesis no confirmada). Estas simulaciones no incluyen reverberación, altavoz ni micrófono, por lo que describen el decodificador y no el alcance en una sala.</p>
+<h3>D. Resultados independientes en teléfonos</h3>
+<p>En la evaluación de [3], ggwave, con tasa neta de 268 bps en sus variantes audible (1,8&ndash;6,3 kHz) e inaudible (15&ndash;19,5 kHz), logró 0 % de error total a 50 cm con equipo de estudio y en todos los entornos probados (oficina, sala de reuniones, aula), junto con Lee <i>et al.</i> y Nearby. En oficina, la variante inaudible funcionó hasta 20 m y la audible solo hasta 1 m; esta última quedó inutilizable con ruido ambiental, mientras que la inaudible fue robusta a todos los ruidos probados salvo el bolsillo. Los 268 bps (33,5 B/s) están en el mismo orden que las tasas derivadas del código (hasta 28,2 B/s en <i>Fastest</i>); no se verificó la longitud de carga usada en [3]. La simulación con ruido blanco no reproduce la degradación que el ruido real de oficina causa al modo audible, por lo que ambos resultados son complementarios.</p>
+
+<h2>VIII. Discusión y líneas de trabajo</h2>
+<p>Los datos revisados muestran un compromiso entre tasa, alcance, robustez y audibilidad (Tabla III). Los sistemas MFSK como ggwave priorizan la robustez y la simplicidad (detección no coherente por magnitud de la FFT), a costa de unos 270 bps; los sistemas OFDM y coherentes alcanzan kilobits a corta distancia pero dependen del hardware [7], [13]. La banda audible es molesta y vulnerable al ruido ambiental [3]; la casi ultrasónica es más limpia pero dependiente del dispositivo.</p>
+<p>Brechas identificadas para una implementación propia: (i) <b>validación real</b>, con mediciones altavoz&ndash;micrófono propias en distintos entornos y distancias, pues la mayoría de los trabajos solo reporta casos favorables [3]; (ii) <b>seguridad</b>, ya que ggwave solo ofrece un XOR sin cifrado ni autenticación, mientras que [11] y [15] proponen mecanismos de confidencialidad propios del canal y [16] documenta ataques reales; (iii) <b>adaptación al canal</b>, con estimación de SNR y elección dinámica de protocolo y redundancia; (iv) <b>fiabilidad de enlace</b>, con fragmentación, confirmaciones y retransmisión para superar los 140 bytes; y (v) <b>robustez de implementación</b>, corrigiendo el comportamiento con señales sin ruido observado en las pruebas.</p>
+
+<h2>IX. Amenazas a la validez y trabajo pendiente</h2>
+<p><b>Cifras de terceros.</b> Provienen de condiciones distintas (hardware, distancia, entorno, definición de tasa neta o bruta) y no son comparables entre sí sin reservas. Las de [13] y [14] son mejores casos tomados de sus resúmenes. <b>Mediciones propias.</b> El ruido es blanco, aditivo y sin reverberación; hay una sola semilla aleatoria y 100 intentos por punto (intervalo de confianza de &plusmn;10 % cerca del 50 %). <b>Prueba acústica real pendiente.</b> Una prueba preliminar de humo con altavoz y micrófono de un equipo de escritorio decodificó correctamente 3 de 3 mensajes con <i>Audible Fastest</i>, pero la serie completa se realizó en condiciones no controladas (volumen y ruido variables) y se descartó. Queda pendiente repetirla con volumen y distancia fijos, varios niveles de ruido y varios dispositivos, y reportar tasa de éxito frente a SNR acústica medida.</p>
+
+<h2>X. Consideraciones de licencia</h2>
+<p>ggwave se distribuye bajo licencia MIT [18], que permite usar, copiar, modificar, publicar y vender el software siempre que se conserven el aviso de derechos de autor y el texto de la licencia. El código de terceros incluido mantiene sus propias licencias (Reed&ndash;Solomon de M. Lubinets, MIT; FFT de T. Ooura [17]; <code>dr_wav</code>, dominio público o MIT-0). Una versión derivada debe conservar tales avisos y atribuir el proyecto original. Esta sección no constituye asesoría jurídica.</p>
+
+<h2>XI. Conclusiones</h2>
+<p>La comunicación por ondas audibles es viable y simple de desplegar, pero ofrece tasas modestas: las tasas netas de los sistemas robustos publicados van de 8 a unos 750 bps, y los kilobits aparecen con ecualización coherente, hardware específico o distancias muy cortas. El canal aéreo interior, con multitrayecto y variación entre dispositivos, es el principal obstáculo [3]. ggwave es un representante maduro de los esquemas MFSK con FEC: sus tasas derivadas del código se verificaron por medición, su decodificador soporta SNR de banda ancha de &minus;9 dB en simulación y, según una evaluación independiente, mantiene errores muy bajos en teléfonos reales, aunque la variante audible sufre con ruido ambiental. Quedan abiertas la seguridad, la adaptación al canal y la validación acústica propia, que serán el eje de la siguiente fase.</p>
+
+<h2>Referencias</h2>
+<div class="refs">
+<p>[1] A. Madhavapeddy, D. Scott, A. Tse y R. Sharp, &ldquo;Audio networking: The forgotten wireless technology,&rdquo; <i>IEEE Pervasive Comput.</i>, vol. 4, no. 3, pp. 55&ndash;60, jul.&ndash;sep. 2005, doi: 10.1109/MPRV.2005.50.</p>
+<p>[2] C. V. Lopes y P. M. Q. Aguiar, &ldquo;Acoustic modems for ubiquitous computing,&rdquo; <i>IEEE Pervasive Comput.</i>, vol. 2, no. 3, pp. 62&ndash;71, jul.&ndash;sep. 2003, doi: 10.1109/MPRV.2003.1228528.</p>
+<p>[3] F. Putz, P. Fortmann, J. Frank, C. Haugwitz, M. Kupnik y M. Hollick, &ldquo;Evaluating acoustic data transmission schemes for ad-hoc communication between nearby smart devices,&rdquo; <i>ACM Trans. Internet Things</i>, vol. 7, no. 1, art. 8, feb. 2026; arXiv:2602.02249.</p>
+<p>[4] G. Gerganov, &ldquo;ggwave: Tiny data-over-sound library,&rdquo; GitHub, 2020. [En línea]. Disponible: https://github.com/ggerganov/ggwave (commit 060aec7, consultado el 28 oct. 2026).</p>
+<p>[5] L. E. Kinsler, A. R. Frey, A. B. Coppens y J. V. Sanders, <i>Fundamentals of Acoustics</i>, 4.ª ed. Nueva York, NY, EE. UU.: Wiley, 2000.</p>
+<p>[6] <i>Acoustics &mdash; Normal equal-loudness-level contours</i>, ISO 226:2003, 2003.</p>
+<p>[7] G. Tabak, X. E. Lin y A. C. Singer, &ldquo;High data rate near-ultrasonic communication with consumer devices,&rdquo; en <i>Proc. EUSIPCO</i>, 2021; arXiv:2103.11261.</p>
+<p>[8] J. G. Proakis y M. Salehi, <i>Digital Communications</i>, 5.ª ed. Nueva York, NY, EE. UU.: McGraw-Hill, 2008.</p>
+<p>[9] C. E. Shannon, &ldquo;A mathematical theory of communication,&rdquo; <i>Bell Syst. Tech. J.</i>, vol. 27, no. 3, pp. 379&ndash;423, 1948.</p>
+<p>[10] I. S. Reed y G. Solomon, &ldquo;Polynomial codes over certain finite fields,&rdquo; <i>J. Soc. Ind. Appl. Math.</i>, vol. 8, no. 2, pp. 300&ndash;304, 1960.</p>
+<p>[11] R. Nandakumar, K. K. Chintalapudi, V. Padmanabhan y R. Venkatesan, &ldquo;Dhwani: Secure peer-to-peer acoustic NFC,&rdquo; en <i>Proc. ACM SIGCOMM</i>, 2013, pp. 63&ndash;74, doi: 10.1145/2486001.2486037.</p>
+<p>[12] P. Getreuer, C. Gnegy, R. F. Lyon y R. A. Saurous, &ldquo;Ultrasonic communication using consumer hardware,&rdquo; <i>IEEE Trans. Multimedia</i>, vol. 20, no. 6, pp. 1277&ndash;1290, 2018, doi: 10.1109/TMM.2017.2766049.</p>
+<p>[13] Y. Bai, J. Liu, L. Lu, Y. Yang, Y. Chen y J. Yu, &ldquo;BatComm: Enabling inaudible acoustic communication with high-throughput for mobile devices,&rdquo; en <i>Proc. 18th ACM Conf. Embedded Networked Sensor Syst. (SenSys)</i>, 2020, pp. 205&ndash;217, doi: 10.1145/3384419.3430773.</p>
+<p>[14] G. Zhang, X. Ji, X. Zhou, D. Qi y W. Xu, &ldquo;Ultrasound communication using the nonlinearity effect of microphone circuits in smart devices,&rdquo; <i>ACM Trans. Sens. Netw.</i>, vol. 20, no. 3, pp. 1&ndash;22, 2024, doi: 10.1145/3631120.</p>
+<p>[15] B. Zhang, Q. Zhan, J. Wang, K. Ren, C. Wang y D. Ma, &ldquo;PriWhisper: Enabling keyless secure acoustic communication for smartphones,&rdquo; IACR Cryptol. ePrint Arch., Rep. 2013/581, 2013.</p>
+<p>[16] V. Mavroudis, S. Hao, Y. Fratantonio, F. Maggi, C. Kruegel y G. Vigna, &ldquo;On the privacy and security of the ultrasound ecosystem,&rdquo; <i>Proc. Privacy Enhancing Technol.</i>, vol. 2017, no. 2, pp. 95&ndash;112, 2017, doi: 10.1515/popets-2017-0018.</p>
+<p>[17] T. Ooura, &ldquo;General purpose FFT (Fast Fourier/Cosine/Sine Transform) package,&rdquo; 1996&ndash;2001. [En línea]. Disponible: https://www.kurims.kyoto-u.ac.jp/~ooura/fft.html</p>
+<p>[18] Open Source Initiative, &ldquo;The MIT License.&rdquo; [En línea]. Disponible: https://opensource.org/license/mit</p>
+</div>
+</main>
+</body>
+</html>

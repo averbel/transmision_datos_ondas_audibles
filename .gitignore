@@ -1,0 +1,11 @@
+# clon del repo original (se obtiene con git clone, ver README)
+ggwave/
+# binarios y temporales
+*.exe
+*.pdb
+*.raw
+*.log
+*.docx
+~$*
+__pycache__/
+venv/
