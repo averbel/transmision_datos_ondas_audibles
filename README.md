@@ -9,12 +9,13 @@ abierto [ggwave](https://github.com/ggerganov/ggwave).
 | Carpeta | Qué hay |
 |---|---|
 | `paper/` | Artículo en formato IEEE de dos columnas: `Articulo_IEEE_Transmision_ondas_audibles.pdf`, su fuente `articulo.html`, las figuras y `make_figures.py`. |
+| `mi_version/` | **spacewases**, módem acústico propio en Python con pruebas y benchmark. Ver `mi_version/README.md`. |
 | `experimentos/ggwave_bench/` | Banco de pruebas en C++ (canal con ruido blanco gaussiano simulado) y resultados en CSV. |
 | `experimentos/prueba_acustica/` | Herramientas para la prueba real altavoz→micrófono (`enc.cpp`, `dec.cpp`, `air.py`). **Pendiente**: las series completas se descartaron por condiciones no controladas. |
 
 ## Reproducir
 
-El código de ggwave no se incluye; se clona aparte (licencia MIT, © 2020 Georgi Gerganov):
+El código de ggwave no forma parte de este repositorio: se tomó como referencia para el análisis y las mediciones (licencia MIT, © 2020 Georgi Gerganov). Para reproducir las mediciones, descárgalo aparte en la misma versión:
 
 ```bash
 git clone https://github.com/ggerganov/ggwave.git
@@ -41,7 +42,7 @@ msedge --headless=new --no-pdf-header-footer \
 - Revisión de literatura y análisis de ggwave: hecho.
 - Mediciones con ruido simulado: hechas (`results2.csv`).
 - Prueba acústica real con volumen y distancia controlados: pendiente.
-- Versión propia del sistema: pendiente.
+- Versión propia del sistema (`mi_version/`): hecha y probada con ruido simulado; faltan la prueba real por aire, la protección contra repetición y la recuperación por fragmento.
 
 ## Atribución y licencia
 

@@ -6,8 +6,8 @@ import sys
 
 import numpy as np
 
-from ondaslink import PROFILES, receive, send
-from ondaslink.modem import FS
+from spacewases import PROFILES, receive, send
+from spacewases.modem import FS
 
 SEED = 20261028
 SNRS = list(range(-12, 13, 2))

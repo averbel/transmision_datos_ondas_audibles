@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="SpaceWases: módem acústico para transmitir texto por sonido con el altavoz y el micrófono.">
+  <title>SpaceWases · módem acústico</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap header-inner">
+      <div>
+        <p class="eyebrow">Módem acústico</p>
+        <h1>SpaceWases</h1>
+        <p class="lede">Texto convertido en tonos audibles. Un altavoz emite, un micrófono escucha y la trama se reconstruye con Reed-Solomon.</p>
+      </div>
+      <p class="header-note">48 kHz · MFSK · RS(255)</p>
+    </div>
+  </header>
+
+  <main class="wrap layout">
+    <section class="panel panel-send" aria-labelledby="send-title">
+      <h2 id="send-title">Enviar</h2>
+      <p class="panel-note">Escribe el mensaje, elige un perfil y emite la señal. También puedes guardarla como WAV.</p>
+
+      <label for="send-text">Mensaje</label>
+      <textarea id="send-text" rows="5" maxlength="2000">hola spacewases</textarea>
+
+      <div class="field-row">
+        <div class="field">
+          <label for="send-profile">Perfil</label>
+          <select id="send-profile"></select>
+        </div>
+        <div class="field">
+          <label for="send-key">Clave (opcional)</label>
+          <input id="send-key" type="password" autocomplete="off" spellcheck="false">
+        </div>
+      </div>
+
+      <div class="actions">
+        <button id="emit" type="button" class="primary">Emitir</button>
+        <button id="download" type="button">Descargar WAV</button>
+      </div>
+      <p id="send-status" class="status" role="status" aria-live="polite"></p>
+      <p id="duration" class="meta"></p>
+    </section>
+
+    <section class="panel panel-receive" aria-labelledby="receive-title">
+      <h2 id="receive-title">Recibir</h2>
+      <p class="panel-note">Escucha con el micrófono o abre un WAV. La clave debe coincidir con la usada al emitir.</p>
+
+      <label for="receive-key">Clave (opcional)</label>
+      <input id="receive-key" type="password" autocomplete="off" spellcheck="false">
+
+      <div class="actions">
+        <button id="listen" type="button" class="primary">Escuchar</button>
+      </div>
+      <p id="receive-status" class="status" role="status" aria-live="polite">Listo para escuchar.</p>
+
+      <canvas id="spectrum" role="img" aria-label="Espectro de audio en vivo"></canvas>
+
+      <div class="file-row">
+        <label for="wav-file">Cargar WAV para decodificar</label>
+        <input id="wav-file" type="file" accept=".wav,audio/wav,audio/x-wav">
+      </div>
+
+      <ol id="messages" class="messages" aria-live="polite" aria-label="Mensajes recibidos"></ol>
+    </section>
+
+    <section class="panel panel-local" aria-labelledby="local-title">
+      <div class="local-copy">
+        <h2 id="local-title">Prueba local</h2>
+        <p class="panel-note">Sin micrófono: genera la señal, le suma ruido gaussiano y la decodifica en esta misma página. Sirve para comparar perfiles y niveles de ruido.</p>
+      </div>
+
+      <div class="local-form">
+        <label for="local-text">Mensaje de prueba</label>
+        <textarea id="local-text" rows="2" maxlength="2000">prueba local de spacewases</textarea>
+
+        <div class="field-row">
+          <div class="field">
+            <label for="local-profile">Perfil</label>
+            <select id="local-profile"></select>
+          </div>
+          <div class="field">
+            <label for="local-snr">SNR: <output id="snr-value" for="local-snr">0 dB</output></label>
+            <input id="local-snr" type="range" min="-12" max="12" step="1" value="0">
+          </div>
+        </div>
+
+        <div class="actions">
+          <button id="local-run" type="button" class="primary">Probar localmente</button>
+        </div>
+        <p id="local-result" class="status" role="status" aria-live="polite"></p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="wrap site-footer">
+    <p><strong>SpaceWases</strong> · Andrés Felipe Verbel Pacheco (CUC)</p>
+    <p>El mensaje no se cifra: la clave solo autentica la trama. Los resultados que no se hayan probado por aire son de simulación.</p>
+  </footer>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

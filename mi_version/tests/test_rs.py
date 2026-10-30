@@ -2,7 +2,7 @@ import random
 
 import pytest
 
-from ondaslink import rs
+from spacewases import rs
 
 
 def test_roundtrip_sin_errores():

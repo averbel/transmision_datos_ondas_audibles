@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from ondaslink import api, frame, receive, send
+from spacewases import api, frame, receive, send
 
 
 def _mensaje(n: int, seed: int = 1) -> bytes:
@@ -95,7 +95,7 @@ def test_mensaje_vacio():
 
 
 def test_as_bytes_no_reinterpreta_ceros_y_unos():
-    from ondaslink import modem
+    from spacewases import modem
     assert modem._as_bytes([0, 1]) == b"\x00\x01"
     assert modem._as_bytes([1, 0, 1]) == b"\x01\x00\x01"
 
@@ -112,7 +112,7 @@ def test_senal_int16():
 
 
 def test_cli_ida_y_vuelta(tmp_path, capsysbinary):
-    from ondaslink import cli
+    from spacewases import cli
     wav = str(tmp_path / "t.wav")
     assert cli.main(["encode", "hola mundo", wav, "--key", "K"]) == 0
     assert cli.main(["decode", wav, "--key", "K"]) == 0
@@ -121,5 +121,5 @@ def test_cli_ida_y_vuelta(tmp_path, capsysbinary):
 
 
 def test_cli_wav_invalido(tmp_path):
-    from ondaslink import cli
+    from spacewases import cli
     assert cli.main(["decode", str(tmp_path / "no_existe.wav")]) == 1

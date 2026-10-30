@@ -1,4 +1,4 @@
-"""ondaslink: modem acustico MFSK con Reed-Solomon y HMAC."""
+"""spacewases: modem acustico MFSK con Reed-Solomon y HMAC."""
 
 from .api import PROFILES, receive, send
 from .frame import Reassembler
