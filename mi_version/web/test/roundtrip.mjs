@@ -1,5 +1,5 @@
 import { readFileSync } from "node:fs";
-import { send, receive, wavDecode, PROFILES } from "../spacewases.js";
+import { send, receive, wavDecode, PROFILES, ReplayGuard } from "../spacewases.js";
 
 let passed = 0;
 let failed = 0;
@@ -75,6 +75,45 @@ for (const [file, keyText, expected] of fixtures) {
   } catch (error) {
     fail(name, error.message);
   }
+}
+
+{
+  const key = encoder.encode("clave");
+  const message = encoder.encode("abrir puerta");
+  const check = async (name, fn) => {
+    try {
+      const ok = await fn();
+      if (ok) pass(name);
+      else fail(name);
+    } catch (error) {
+      fail(name, error.message);
+    }
+  };
+  await check("v2: clave errónea devuelve null", async () => {
+    const signal = await send(message, key, "normal");
+    return (await receive(signal, encoder.encode("otra"))) === null;
+  });
+  await check("v2: v1 sin clave no se acepta con clave", async () => {
+    const signal = await send(message, null, "normal");
+    return (await receive(signal, key)) === null;
+  });
+  await check("v2: señal con clave no se acepta sin clave", async () => {
+    const signal = await send(message, key, "normal");
+    return (await receive(signal, null)) === null;
+  });
+  await check("v2: ReplayGuard rechaza la repetición", async () => {
+    const guard = new ReplayGuard();
+    const signal = await send(message, key, "normal");
+    const first = await receive(signal, key, null, guard);
+    const second = await receive(signal, key, null, guard);
+    const fresh = await receive(await send(message, key, "normal"), key, null, guard);
+    return first !== null && equalBytes(first, message) && second === null && fresh !== null;
+  });
+  await check("v2: ventana de tiempo", async () => {
+    const guard = new ReplayGuard(60, () => Date.now() / 1000 + 3600);
+    const signal = await send(message, key, "normal");
+    return (await receive(signal, key, null, guard)) === null;
+  });
 }
 
 function makeRng(seed) {

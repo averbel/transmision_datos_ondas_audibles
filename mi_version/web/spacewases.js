@@ -15,6 +15,14 @@ export const MAGIC = 0xa5;
 export const VERSION = 1;
 export const HEADER_LEN = 6;
 export const HMAC_LEN = 4;
+export const VERSION_KEYED = 2;
+export const SESSION_LEN = 10;
+export const HEADER_LEN_V2 = HEADER_LEN + SESSION_LEN;
+export const HMAC_LEN_V2 = 8;
+
+export function dataLen(chunk, keyed) {
+  return keyed ? HEADER_LEN_V2 + chunk + HMAC_LEN_V2 : HEADER_LEN + chunk + HMAC_LEN;
+}
 
 export const PROFILES = {
   robust: [0, 48, 20],
@@ -594,32 +602,119 @@ function concatBytes(parts) {
   return out;
 }
 
-async function encodeFragment(msgId, fragIdx, fragTotal, payload, key, profileId, chunk) {
+const subkeyCache = new Map();
+const textEncoder = new TextEncoder();
+
+// Claves de cifrado y de etiqueta derivadas de la clave del usuario (igual que frame._subkey).
+function subkeys(key) {
+  const id = bytesToHex(key);
+  let promise = subkeyCache.get(id);
+  if (!promise) {
+    promise = (async () => {
+      const subtle = await getSubtle();
+      const root = await importHmacKey(key);
+      const derive = async (label) => {
+        const digest = await subtle.sign("HMAC", root, textEncoder.encode(`spacewases-v2-${label}`));
+        return subtle.importKey("raw", digest, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+      };
+      return { enc: await derive("enc"), mac: await derive("mac") };
+    })();
+    subkeyCache.set(id, promise);
+  }
+  return promise;
+}
+
+function randomBytes(n) {
+  const out = new Uint8Array(n);
+  if (globalThis.crypto && globalThis.crypto.getRandomValues) {
+    globalThis.crypto.getRandomValues(out);
+  } else {
+    for (let i = 0; i < n; i++) out[i] = Math.floor(Math.random() * 256);
+  }
+  return out;
+}
+
+// Sesion nueva: marca de tiempo (s, 4 bytes big-endian) + nonce aleatorio de 6 bytes.
+export function newSession(nowSeconds = Date.now() / 1000) {
+  const out = new Uint8Array(SESSION_LEN);
+  new DataView(out.buffer).setUint32(0, Math.floor(nowSeconds) >>> 0, false);
+  out.set(randomBytes(SESSION_LEN - 4), 4);
+  return out;
+}
+
+async function keystream(encKey, session, msgId, fragIdx, length) {
+  const subtle = await getSubtle();
+  const out = new Uint8Array(Math.ceil(length / 32) * 32);
+  for (let counter = 0; counter * 32 < length; counter++) {
+    const block = new Uint8Array(SESSION_LEN + 2 + 4);
+    block.set(session, 0);
+    block[SESSION_LEN] = msgId;
+    block[SESSION_LEN + 1] = fragIdx;
+    new DataView(block.buffer).setUint32(SESSION_LEN + 2, counter, false);
+    out.set(new Uint8Array(await subtle.sign("HMAC", encKey, block)), counter * 32);
+  }
+  return out.slice(0, length);
+}
+
+function xorBytes(data, stream) {
+  const out = new Uint8Array(data.length);
+  for (let i = 0; i < data.length; i++) out[i] = data[i] ^ stream[i];
+  return out;
+}
+
+async function encodeFragment(msgId, fragIdx, fragTotal, payload, key, profileId, chunk, session = null) {
   if (payload.length > chunk) throw new Error("fragmento demasiado grande");
   if (msgId < 0 || msgId > 255 || fragTotal < 1 || fragTotal > 255) {
     throw new Error("identificadores fuera de rango");
   }
   if (fragIdx < 0 || fragIdx >= fragTotal) throw new Error("indice de fragmento fuera de rango");
-  const flags = (VERSION << 4) | (profileId & 0x0f);
+  const keyed = key !== null;
+  const version = keyed ? VERSION_KEYED : VERSION;
+  const flags = (version << 4) | (profileId & 0x0f);
   const header = Uint8Array.from([MAGIC, flags, msgId, fragIdx, fragTotal, payload.length]);
-  const body = concatBytes([header, payload]);
-  const tag = await hmacTag(body, key);
-  const plain = concatBytes([body, tag]);
-  const out = new Uint8Array(HEADER_LEN + chunk + HMAC_LEN);
+  let plain;
+  if (keyed) {
+    const sess = session === null ? newSession() : session;
+    if (sess.length !== SESSION_LEN) throw new Error("sesion invalida");
+    const keys = await subkeys(key);
+    const stream = await keystream(keys.enc, sess, msgId, fragIdx, payload.length);
+    const body = concatBytes([header, sess, xorBytes(payload, stream)]);
+    const subtle = await getSubtle();
+    const tag = new Uint8Array(await subtle.sign("HMAC", keys.mac, body)).slice(0, HMAC_LEN_V2);
+    plain = concatBytes([body, tag]);
+  } else {
+    const body = concatBytes([header, payload]);
+    plain = concatBytes([body, await hmacTag(body, null)]);
+  }
+  const out = new Uint8Array(dataLen(chunk, keyed));
   out.set(plain, 0);
   return out;
 }
 
 async function parseFrame(plain, key) {
-  if (plain.length < HEADER_LEN + HMAC_LEN) return null;
-  if (plain[0] !== MAGIC || plain[1] >> 4 !== VERSION) return null;
+  if (plain.length < HEADER_LEN + HMAC_LEN || plain[0] !== MAGIC) return null;
+  const keyed = key !== null;
+  if (plain[1] >> 4 !== (keyed ? VERSION_KEYED : VERSION)) return null;
   const length = plain[5];
-  if (HEADER_LEN + length + HMAC_LEN > plain.length) return null;
-  const payload = plain.slice(HEADER_LEN, HEADER_LEN + length);
-  const body = plain.slice(0, HEADER_LEN + length);
-  const tag = plain.slice(HEADER_LEN + length, HEADER_LEN + length + HMAC_LEN);
-  const expected = await hmacTag(body, key);
-  if (!timingSafeEqual(tag, expected)) return null;
+  const head = keyed ? HEADER_LEN_V2 : HEADER_LEN;
+  const tagLen = keyed ? HMAC_LEN_V2 : HMAC_LEN;
+  if (head + length + tagLen > plain.length) return null;
+  const body = plain.slice(0, head + length);
+  const tag = plain.slice(head + length, head + length + tagLen);
+  let payload;
+  let session = null;
+  if (keyed) {
+    const keys = await subkeys(key);
+    const subtle = await getSubtle();
+    const expected = new Uint8Array(await subtle.sign("HMAC", keys.mac, body)).slice(0, HMAC_LEN_V2);
+    if (!timingSafeEqual(tag, expected)) return null;
+    session = plain.slice(HEADER_LEN, HEADER_LEN_V2);
+    const stream = await keystream(keys.enc, session, plain[2], plain[3], length);
+    payload = xorBytes(plain.slice(head, head + length), stream);
+  } else {
+    if (!timingSafeEqual(tag, await hmacTag(body, null))) return null;
+    payload = plain.slice(head, head + length);
+  }
   return {
     msgId: plain[2],
     fragIdx: plain[3],
@@ -627,7 +722,29 @@ async function parseFrame(plain, key) {
     length,
     payload,
     profileId: plain[1] & 0x0f,
+    session,
   };
+}
+
+// Rechaza mensajes con clave ya vistos o fuera de la ventana de maxAge segundos.
+export class ReplayGuard {
+  constructor(maxAge = 120, clock = () => Date.now() / 1000) {
+    this.maxAge = maxAge;
+    this.clock = clock;
+    this.seen = new Map();
+  }
+
+  accept(session) {
+    if (session === null) return true;
+    const now = this.clock();
+    const stamp = new DataView(session.buffer, session.byteOffset, 4).getUint32(0, false);
+    if (Math.abs(now - stamp) > this.maxAge) return false;
+    for (const [id, t] of this.seen) if (Math.abs(now - t) > this.maxAge) this.seen.delete(id);
+    const id = bytesToHex(session);
+    if (this.seen.has(id)) return false;
+    this.seen.set(id, stamp);
+    return true;
+  }
 }
 
 async function parseFragment(plain, key, profileId, chunk) {
@@ -646,7 +763,7 @@ class Reassembler {
   }
 
   push(frame) {
-    const msgId = frame.msgId;
+    const msgId = frame.session === null ? `${frame.msgId}` : `${frame.msgId}:${bytesToHex(frame.session)}`;
     const total = frame.fragTotal;
     let state = this.pending.get(msgId);
     if (!state || state.total !== total) {
@@ -685,19 +802,19 @@ async function packMessage(msg, key, profileId, chunk, parity, msgId = null) {
   const total = Math.max(1, Math.ceil(msg.length / chunk));
   if (total > 255) throw new Error("mensaje demasiado largo");
   const ident = msgId === null ? nextMessageId() : msgId & 0xff;
+  const session = key === null ? null : newSession();
   const blocks = [];
   for (let idx = 0; idx < total; idx++) {
     const payload = msg.slice(idx * chunk, (idx + 1) * chunk);
-    const plain = await encodeFragment(ident, idx, total, payload, key, profileId, chunk);
+    const plain = await encodeFragment(ident, idx, total, payload, key, profileId, chunk, session);
     blocks.push(rsEncode(plain, parity));
   }
   return concatBytes(blocks);
 }
 
-async function decodeStream(raw, key, profiles) {
+async function decodeStream(raw, key, profiles, guard = null) {
   for (const [profileId, chunk, parity] of profiles) {
-    const dataLen = HEADER_LEN + chunk + HMAC_LEN;
-    const blockLen = dataLen + parity;
+    const blockLen = dataLen(chunk, key !== null) + parity;
     const maxBlocks = Math.trunc(raw.length / blockLen);
     if (maxBlocks === 0) continue;
     const decoded = new Map();
@@ -730,7 +847,10 @@ async function decodeStream(raw, key, profiles) {
       const reassembler = new Reassembler();
       let result = null;
       for (const frame of frames) result = reassembler.push(frame);
-      if (result !== null) return result;
+      if (result !== null) {
+        if (guard !== null && !guard.accept(frames[0].session)) return null;
+        return result;
+      }
     }
   }
   return null;
@@ -746,10 +866,10 @@ export async function send(msg, key = null, profile = "normal") {
   return modulate(raw);
 }
 
-export async function receive(signal, key = null, onStatus = null) {
+export async function receive(signal, key = null, onStatus = null, guard = null) {
   const raw = demodulate(signal, onStatus);
   if (raw === null) return null;
-  return decodeStream(raw, key, PROFILE_ORDER);
+  return decodeStream(raw, key, PROFILE_ORDER, guard);
 }
 
 export function wavEncode(signal) {

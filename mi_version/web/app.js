@@ -8,8 +8,7 @@ import {
   SYMBOL,
   CHIRP_LEN,
   GUARD,
-  HEADER_LEN,
-  HMAC_LEN,
+  dataLen,
 } from "./spacewases.js";
 
 const PROFILE_LABELS = {
@@ -63,10 +62,10 @@ function keyFrom(input) {
   return input.value.length ? encoder.encode(input.value) : null;
 }
 
-function estimateSeconds(byteLength, profileName) {
+function estimateSeconds(byteLength, profileName, keyed = false) {
   const [, chunk, parity] = PROFILES[profileName];
   const total = Math.max(1, Math.ceil(byteLength / chunk));
-  const raw = total * (HEADER_LEN + chunk + HMAC_LEN + parity);
+  const raw = total * (dataLen(chunk, keyed) + parity);
   const samples = 2 * CHIRP_LEN + 2 * GUARD + raw * SYMBOL;
   return samples / FS;
 }
@@ -80,7 +79,7 @@ function updateDuration() {
     durationLabel.textContent = `Mensaje demasiado largo para el perfil ${PROFILE_LABELS[profile]}.`;
     return;
   }
-  const seconds = estimateSeconds(bytes, profile);
+  const seconds = estimateSeconds(bytes, profile, keyFrom(sendKey) !== null);
   const formatted = seconds.toLocaleString("es", {
     minimumFractionDigits: 1,
     maximumFractionDigits: 1,
@@ -92,6 +91,7 @@ function updateDuration() {
 
 sendText.addEventListener("input", updateDuration);
 sendProfile.addEventListener("change", updateDuration);
+sendKey.addEventListener("input", updateDuration);
 
 let playbackContext = null;
 
