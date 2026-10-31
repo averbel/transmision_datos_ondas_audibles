@@ -37,7 +37,7 @@ La página declara una política de seguridad de contenido que solo permite carg
 
 ### Publicar en Vercel
 
-Desde `web/`: `npx vercel deploy --prod`. `.vercelignore` deja fuera `SPEC.md` y `test/`, y `vercel.json` añade cabeceras de seguridad (la misma política de contenido más `frame-ancestors 'none'`, `nosniff`, sin referer y micrófono solo para el propio sitio). La regla de cambiar `?v=` en cada publicación es la misma.
+Publicada en https://spacewases.vercel.app (proyecto `averbels-projects/spacewases`, sin conexión a GitHub: cada push no publica nada). Para publicar de nuevo, desde `web/`: `npx vercel deploy --prod`. `.vercelignore` deja fuera `SPEC.md` y `test/`, y `vercel.json` añade cabeceras de seguridad (la misma política de contenido más `frame-ancestors 'none'`, `nosniff`, sin referer y micrófono solo para el propio sitio). La regla de cambiar `?v=` en cada publicación es la misma.
 
 ## Uso
 
