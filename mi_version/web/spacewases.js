@@ -651,13 +651,30 @@ const subkeyCache = new Map();
 const textEncoder = new TextEncoder();
 
 // Claves de cifrado y de etiqueta derivadas de la clave del usuario (igual que frame._subkey).
+// Clave maestra de 32 bytes: PBKDF2-HMAC-SHA256 de la clave del usuario (igual que
+// frame.master_key en Python). La sal es fija para no derivar en cada intento de
+// decodificacion; ver la explicacion en frame.py.
+export const PBKDF2_SALT = textEncoder.encode("spacewases-pbkdf2-v1");
+export const PBKDF2_ITERATIONS = 600000;
+
+export async function masterKey(key) {
+  const subtle = await getSubtle();
+  const base = await subtle.importKey("raw", key, "PBKDF2", false, ["deriveBits"]);
+  const bits = await subtle.deriveBits(
+    { name: "PBKDF2", hash: "SHA-256", salt: PBKDF2_SALT, iterations: PBKDF2_ITERATIONS },
+    base,
+    256
+  );
+  return new Uint8Array(bits);
+}
+
 function subkeys(key) {
   const id = bytesToHex(key);
   let promise = subkeyCache.get(id);
   if (!promise) {
     promise = (async () => {
       const subtle = await getSubtle();
-      const root = await importHmacKey(key);
+      const root = await importHmacKey(await masterKey(key));
       const derive = async (label) => {
         const digest = await subtle.sign("HMAC", root, textEncoder.encode(`spacewases-v2-${label}`));
         return subtle.importKey("raw", digest, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);

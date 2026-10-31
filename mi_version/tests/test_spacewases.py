@@ -92,6 +92,12 @@ def test_reassembler_desordenado_y_duplicado():
     assert reassembler.push(frames[2]) == b"AAABBBCCC"
 
 
+def test_pbkdf2_vector_compartido_con_js():
+    # El mismo vector esta en web/test/roundtrip.mjs: ambas implementaciones deben coincidir.
+    assert frame.master_key(b"clave").hex() == (
+        "5291958f4436a8226a06d5c96faa7d72e5d1ca4221d7e80cf1e8242d5fda62e3")
+
+
 def test_payload_cifrado_en_el_aire():
     key = b"k"
     plain = frame.encode_fragment(1, 0, 1, b"texto secreto", key, 1, 48)

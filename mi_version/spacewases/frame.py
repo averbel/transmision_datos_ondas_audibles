@@ -6,8 +6,11 @@ cualquiera puede fabricar tramas validas y el payload viaja en claro.
 Version 2 (con clave): la cabecera lleva una sesion de 10 bytes (marca de
 tiempo de 4 bytes + nonce aleatorio de 6), el payload se cifra con un flujo
 HMAC-SHA256 en modo contador y la etiqueta de 8 bytes cubre cabecera y texto
-cifrado (cifrar y luego autenticar). Las claves de cifrado y de etiqueta se
-derivan de la clave del usuario. Un receptor con clave rechaza tramas v1
+cifrado (cifrar y luego autenticar). La clave del usuario pasa por
+PBKDF2-HMAC-SHA256 (600 000 iteraciones, sal fija PBKDF2_SALT) para frenar los
+ataques de diccionario, y de esa clave maestra se derivan las de cifrado y de
+etiqueta. La sal es fija porque una sal por sesion obligaria a derivar en cada
+intento de decodificacion; el costo es que una frase debil sigue siendo debil. Un receptor con clave rechaza tramas v1
 (sin degradacion) y uno sin clave no acepta v2. La proteccion contra
 repeticion es del receptor: ReplayGuard recuerda las sesiones vistas y su
 antiguedad; sin guardia, receive() es sin estado y acepta una trama grabada.
@@ -23,6 +26,7 @@ import math
 import random
 import struct
 import time
+from functools import lru_cache
 
 from . import rs
 
@@ -34,6 +38,8 @@ HMAC_LEN = 4
 SESSION_LEN = 10
 HEADER_LEN_V2 = HEADER_LEN + SESSION_LEN
 HMAC_LEN_V2 = 8
+PBKDF2_SALT = b"spacewases-pbkdf2-v1"
+PBKDF2_ITERATIONS = 600_000
 
 _rng = random.SystemRandom()
 _last_id = -1
@@ -59,8 +65,14 @@ def _tag(body: bytes, key: bytes | None) -> bytes:
     return hmac.new(secret, body, hashlib.sha256).digest()[:HMAC_LEN]
 
 
+@lru_cache(maxsize=16)
+def master_key(key: bytes) -> bytes:
+    """Clave maestra de 32 bytes: PBKDF2-HMAC-SHA256 de la clave del usuario."""
+    return hashlib.pbkdf2_hmac("sha256", key, PBKDF2_SALT, PBKDF2_ITERATIONS)
+
+
 def _subkey(key: bytes, label: bytes) -> bytes:
-    return hmac.new(key, b"spacewases-v2-" + label, hashlib.sha256).digest()
+    return hmac.new(master_key(bytes(key)), b"spacewases-v2-" + label, hashlib.sha256).digest()
 
 
 def new_session(now: float | None = None) -> bytes:

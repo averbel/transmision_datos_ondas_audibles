@@ -13,6 +13,7 @@ import {
   modulate,
   demodulate,
   signalSeconds,
+  masterKey,
 } from "../spacewases.js";
 
 let passed = 0;
@@ -161,6 +162,18 @@ for (const [file, keyText, expected] of fixtures) {
     else fail("repeat=2 recupera con un bloque anulado");
   } catch (error) {
     fail("recuperación por fragmento", error.message);
+  }
+}
+
+{
+  // El mismo vector esta en tests/test_spacewases.py: Python y JS deben derivar igual.
+  const name = "PBKDF2: misma clave maestra que Python";
+  try {
+    const hex = Array.from(await masterKey(encoder.encode("clave")), (b) => b.toString(16).padStart(2, "0")).join("");
+    if (hex === "5291958f4436a8226a06d5c96faa7d72e5d1ca4221d7e80cf1e8242d5fda62e3") pass(name);
+    else fail(name, hex);
+  } catch (error) {
+    fail(name, error.message);
   }
 }
 

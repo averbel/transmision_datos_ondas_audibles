@@ -55,7 +55,7 @@ Con el diseño anterior (símbolos de una trama) la misma prueba dio 7/60, 1/60 
 
 ## Límites conocidos
 
-- Con `key=None` (trama v1) el mensaje viaja en claro y se firma con clave vacía: cualquiera puede fabricar tramas. Con clave (trama v2) el mensaje va cifrado y autenticado con una etiqueta de 8 bytes.
+- Con `key=None` (trama v1) el mensaje viaja en claro y se firma con clave vacía: cualquiera puede fabricar tramas. Con clave (trama v2) el mensaje va cifrado y autenticado con una etiqueta de 8 bytes. La clave pasa por PBKDF2-HMAC-SHA256 (600 000 iteraciones, sal fija `spacewases-pbkdf2-v1`), que encarece los ataques de diccionario pero no salva una frase débil.
 - La protección contra repetición es opcional y del receptor: hay que pasar un `ReplayGuard` a `receive`. Exige relojes razonablemente sincronizados (ventana de 120 s por defecto).
 - Cada bloque Reed-Solomon se valida por separado, pero un mensaje de varios fragmentos solo se recupera si llegan todos. `send(..., repeat=N)` lo envía N veces para rellenar huecos, a costa de N veces el tiempo de aire.
 - Los símbolos largos cuestan tasa: un bloque de `robust` dura unos 10 s. No hay seguimiento de reloj ni búsqueda fina de alineación (ggwave prueba 16 desplazamientos por trama). Los valores de tramas y paridad se eligieron con mediciones de un solo equipo y sala (`diagnostico_aire/`).
