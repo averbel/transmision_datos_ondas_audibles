@@ -1,5 +1,5 @@
 profile,snr_db,trials,success
-robust,-12,100,89
+robust,-12,100,100
 robust,-10,100,100
 robust,-8,100,100
 robust,-6,100,100
@@ -12,7 +12,7 @@ robust,6,100,100
 robust,8,100,100
 robust,10,100,100
 robust,12,100,100
-normal,-12,100,24
+normal,-12,100,100
 normal,-10,100,100
 normal,-8,100,100
 normal,-6,100,100
@@ -25,7 +25,7 @@ normal,6,100,100
 normal,8,100,100
 normal,10,100,100
 normal,12,100,100
-fast,-12,100,6
+fast,-12,100,100
 fast,-10,100,100
 fast,-8,100,100
 fast,-6,100,100

@@ -11,6 +11,11 @@ cada tono completa un numero entero de ciclos en SYMBOL muestras, el prefijo es
 la continuacion periodica del tono. El receptor analiza solo las SYMBOL muestras
 posteriores, asi un eco de sala con retardo menor que el prefijo (unos 5 ms,
 1.8 m de diferencia de camino) cae dentro del prefijo y no contamina el simbolo.
+
+Por aire, la cola de reverberacion de una sala dura mucho mas que ese prefijo.
+Por eso los perfiles usan simbolos de varias tramas (parametro frames): la
+primera trama hace de guarda y el receptor suma las siguientes antes de la FFT,
+como ggwave. Ver mi_version/diagnostico_aire.
 """
 
 from __future__ import annotations
@@ -82,24 +87,40 @@ def _as_bytes(data) -> bytes:
     return bytes(int(v) for v in data)
 
 
-def _tone_matrix(bins: list[int], cp: int) -> np.ndarray:
-    """Tonos de cp + SYMBOL muestras; la fase del cuerpo arranca en la muestra cp."""
-    n = np.arange(-cp, SYMBOL, dtype=np.float64)[:, None]
+def _layout(cp: int, frames: int) -> tuple[int, int, int]:
+    """(guarda inicial, tramas analizadas, periodo) de un simbolo.
+
+    Con frames == 1 el simbolo es prefijo ciclico de cp muestras + una trama.
+    Con frames > 1 el simbolo son frames tramas del mismo tono: la primera hace
+    de guarda (alli cae la cola del simbolo anterior) y el receptor suma las
+    demas antes de la FFT, como ggwave.
+    """
+    if frames < 1:
+        raise ValueError("frames debe ser >= 1")
+    lead = cp if frames == 1 else SYMBOL
+    analyzed = max(1, frames - 1)
+    return lead, analyzed, lead + analyzed * SYMBOL
+
+
+def _tone_matrix(bins: list[int], lead: int, length: int = SYMBOL) -> np.ndarray:
+    """Tonos de lead + length muestras; la fase arranca en cero en la muestra lead."""
+    n = np.arange(-lead, length, dtype=np.float64)[:, None]
     freqs = np.asarray(bins, dtype=np.float64)[None, :]
     return TONE_AMP * np.sin(2.0 * np.pi * n * freqs / SYMBOL)
 
 
-def modulate(data_in, cp: int = CYCLIC_PREFIX) -> np.ndarray:
+def modulate(data_in, cp: int = CYCLIC_PREFIX, frames: int = 1) -> np.ndarray:
     """Convierte bytes (o una secuencia de enteros 0-255) en una senal float32."""
     data = _as_bytes(data_in)
     symbols = np.frombuffer(data, dtype=np.uint8)
     high = symbols >> 4
     low = symbols & 0x0F
+    lead, analyzed, period = _layout(cp, frames)
 
     if len(symbols):
-        tones_a = _tone_matrix(GROUP_A, cp)
-        tones_b = _tone_matrix(GROUP_B, cp)
-        matrix = (tones_a[:, high] + tones_b[:, low]).T * _envelope(cp + SYMBOL)[None, :]
+        tones_a = _tone_matrix(GROUP_A, lead, analyzed * SYMBOL)
+        tones_b = _tone_matrix(GROUP_B, lead, analyzed * SYMBOL)
+        matrix = (tones_a[:, high] + tones_b[:, low]).T * _envelope(period)[None, :]
         body = matrix.reshape(-1)
     else:
         body = np.zeros(0, dtype=np.float64)
@@ -142,8 +163,11 @@ def _tone_scores(spec: np.ndarray, bins: list[int]) -> np.ndarray:
     return out
 
 
-def demodulate(signal, cp: int = CYCLIC_PREFIX) -> bytes | None:
-    """Recupera los bytes de una senal; devuelve None si no hay sincronia."""
+def demodulate(signal, cp: int = CYCLIC_PREFIX, frames: int = 1) -> bytes | None:
+    """Recupera los bytes de una senal; devuelve None si no hay sincronia.
+
+    cp y frames deben coincidir con los usados al modular.
+    """
     s = np.asarray(signal, dtype=np.float64).ravel()
     if s.size == 0:
         return None
@@ -155,7 +179,7 @@ def demodulate(signal, cp: int = CYCLIC_PREFIX) -> bytes | None:
     if score < SYNC_THRESHOLD:
         return None
 
-    period = cp + SYMBOL
+    lead, analyzed, period = _layout(cp, frames)
     data_start = start + len(chirp) + GUARD
     if data_start >= len(s):
         return b""
@@ -169,11 +193,12 @@ def demodulate(signal, cp: int = CYCLIC_PREFIX) -> bytes | None:
 
     if count == 0:
         return b""
-    idx = data_start + cp + np.arange(count) * period
-    idx = idx[idx + SYMBOL <= len(s)]
+    idx = data_start + lead + np.arange(count) * period
+    idx = idx[idx + analyzed * SYMBOL <= len(s)]
     if len(idx) == 0:
         return b""
-    blocks = s[idx[:, None] + np.arange(SYMBOL)[None, :]]
+    window = np.arange(SYMBOL)[None, :]
+    blocks = sum(s[(idx + f * SYMBOL)[:, None] + window] for f in range(analyzed))
     blocks = blocks - blocks.mean(axis=1, keepdims=True)
     spec = np.abs(np.fft.rfft(blocks, axis=1)) ** 2
     high = np.argmax(_tone_scores(spec, GROUP_A), axis=1)

@@ -4,11 +4,15 @@ import {
   receive,
   wavDecode,
   PROFILES,
+  FRAMES,
   ReplayGuard,
   CHIRP_LEN,
   GUARD,
   SYMBOL,
-  CYCLIC_PREFIX,
+  FS,
+  modulate,
+  demodulate,
+  signalSeconds,
 } from "../spacewases.js";
 
 let passed = 0;
@@ -141,10 +145,11 @@ for (const [file, keyText, expected] of fixtures) {
 {
   const message = makeMessage(100);
   const wipeBlock = (signal) => {
-    // Anula 20 simbolos dentro del bloque 1 de la primera copia (normal: bloques de 68 simbolos).
-    const start = CHIRP_LEN + GUARD + 80 * (SYMBOL + CYCLIC_PREFIX);
+    // Anula 20 simbolos dentro del bloque 1 de la primera copia (normal: bloques de 90 simbolos).
+    const period = FRAMES.normal * SYMBOL;
+    const start = CHIRP_LEN + GUARD + 110 * period;
     const out = Float32Array.from(signal);
-    out.fill(0, start, start + 20 * (SYMBOL + CYCLIC_PREFIX));
+    out.fill(0, start, start + 20 * period);
     return out;
   };
   try {
@@ -156,6 +161,49 @@ for (const [file, keyText, expected] of fixtures) {
     else fail("repeat=2 recupera con un bloque anulado");
   } catch (error) {
     fail("recuperación por fragmento", error.message);
+  }
+}
+
+for (const frames of [1, 2, 3, 6]) {
+  const name = `módem con símbolos de ${frames} trama(s)`;
+  try {
+    const data = makeMessage(64);
+    const got = demodulate(modulate(data, frames), null, frames);
+    if (got !== null && equalBytes(got, data)) pass(name);
+    else fail(name);
+  } catch (error) {
+    fail(name, error.message);
+  }
+}
+
+for (const profile of Object.keys(PROFILES)) {
+  const name = `signalSeconds coincide con send (${profile})`;
+  try {
+    const message = makeMessage(100);
+    const key = encoder.encode("clave");
+    const signal = await send(message, key, profile, 2);
+    const expected = signalSeconds(message.length, profile, true, 2);
+    if (Math.abs(signal.length / FS - expected) < 1e-9) pass(name);
+    else fail(name, `${signal.length / FS} s frente a ${expected} s`);
+  } catch (error) {
+    fail(name, error.message);
+  }
+}
+
+{
+  const name = "ReplayGuard: un fallo posterior no hereda el motivo anterior";
+  try {
+    const key = encoder.encode("clave");
+    const guard = new ReplayGuard();
+    const signal = await send(encoder.encode("hola"), key, "fast");
+    await receive(signal, key, null, guard);
+    await receive(signal, key, null, guard);
+    const silence = new Float32Array(FS);
+    const result = await receive(silence, key, null, guard);
+    if (result === null && guard.lastReason === null) pass(name);
+    else fail(name, `lastReason=${guard.lastReason}`);
+  } catch (error) {
+    fail(name, error.message);
   }
 }
 

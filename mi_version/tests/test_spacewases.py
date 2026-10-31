@@ -125,13 +125,15 @@ def test_ventana_de_tiempo():
     key = b"k"
     clock = {"now": 1_000_000.0}
     guard = frame.ReplayGuard(max_age=60, clock=lambda: clock["now"])
+    profile_id, chunk, parity = api.PROFILES["normal"]
     session_viejo = frame.new_session(now=clock["now"] - 3600)
-    plain = frame.encode_fragment(1, 0, 1, b"viejo", key, 1, 48, session_viejo)
-    raw = frame.rs.encode(plain, 10)
+    plain = frame.encode_fragment(1, 0, 1, b"viejo", key, profile_id, chunk, session_viejo)
+    raw = frame.rs.encode(plain, parity)
+    assert frame.decode_stream(raw, key, [api.PROFILES["normal"]]) == b"viejo"
     assert frame.decode_stream(raw, key, [api.PROFILES["normal"]], guard) is None
-    fresh = frame.encode_fragment(1, 0, 1, b"nuevo", key, 1, 48,
+    fresh = frame.encode_fragment(1, 0, 1, b"nuevo", key, profile_id, chunk,
                                   frame.new_session(now=clock["now"]))
-    raw = frame.rs.encode(fresh, 10)
+    raw = frame.rs.encode(fresh, parity)
     assert frame.decode_stream(raw, key, [api.PROFILES["normal"]], guard) == b"nuevo"
     clock["now"] += 3600
     assert frame.decode_stream(raw, key, [api.PROFILES["normal"]], guard) is None
@@ -161,6 +163,46 @@ def test_repeticion_por_el_aire_con_clave():
     guard = frame.ReplayGuard()
     assert receive(send(msg, key, "normal", repeat=2), key, guard) == msg
     assert receive(send(msg, key, "normal", repeat=2), key, guard) == msg
+
+
+@pytest.mark.parametrize("frames", [2, 3, 6])
+def test_simbolos_de_varias_tramas(frames):
+    from spacewases import modem
+    data = _mensaje(64, seed=40 + frames)
+    signal = modem.modulate(data, frames=frames)
+    assert len(signal) == 2 * modem.CHIRP_LEN + 2 * modem.GUARD + len(data) * frames * modem.SYMBOL
+    assert modem.demodulate(signal, frames=frames) == data
+
+
+def _con_sala(signal, rt60=0.4, drr_db=0.0, seed=2):
+    """Camino directo + cola difusa que decae exponencialmente (modelo simple de sala)."""
+    rng = np.random.default_rng(seed)
+    n = int(rt60 * 48000)
+    t = np.arange(n) / 48000
+    tail = rng.normal(size=n) * np.exp(-6.9 * t / rt60)
+    tail[:48] = 0.0
+    tail *= np.sqrt(10 ** (-drr_db / 10) / np.sum(tail ** 2))
+    tail[0] = 1.0
+    size = len(signal) + n - 1
+    nfft = 1 << (size - 1).bit_length()
+    out = np.fft.irfft(np.fft.rfft(signal, nfft) * np.fft.rfft(tail, nfft), nfft)
+    return out[:size]
+
+
+def test_varias_tramas_resisten_reverberacion():
+    """Con una cola de sala de 0,4 s, una trama falla y varias tramas aguantan."""
+    from spacewases import modem
+    data = _mensaje(200, seed=1)
+
+    def errores(frames):
+        signal = modem.modulate(data, frames=frames).astype(np.float64)
+        got = modem.demodulate(_con_sala(signal), frames=frames)
+        got = (got or b"")[:len(data)].ljust(len(data), b"\x00")
+        return sum(a != b for a, b in zip(got, data))
+
+    assert errores(1) > 20
+    assert errores(3) <= 10
+    assert errores(6) == 0
 
 
 def _con_eco(signal, delay, gain):

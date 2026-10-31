@@ -5,7 +5,7 @@ Módem acústico propio en Python (solo `numpy` y la biblioteca estándar) para 
 ## Qué incluye
 
 - `spacewases/rs.py`: Reed-Solomon sobre GF(256).
-- `spacewases/modem.py`: modulación MFSK a 48 kHz con sincronía por chirp (bins de 46,875 Hz desde 1875 Hz).
+- `spacewases/modem.py`: modulación MFSK a 48 kHz con sincronía por chirp (bins de 46,875 Hz desde 1875 Hz). Cada símbolo dura varias tramas de 1024 muestras (6 en `robust`, 3 en `normal` y `fast`): la primera hace de guarda frente a la reverberación y el receptor suma las demás, como ggwave.
 - `spacewases/frame.py`: tramas con cabecera, HMAC-SHA256 truncado a 4 bytes, fragmentación y protección Reed-Solomon.
 - `spacewases/api.py`: `send` y `receive`, con perfiles `robust`, `normal` y `fast`.
 - `spacewases/cli.py`: codificar y decodificar archivos WAV.
@@ -18,7 +18,7 @@ Módem acústico propio en Python (solo `numpy` y la biblioteca estándar) para 
 ```bash
 cd web
 python -m http.server 8790
-node test/roundtrip.mjs   # 29 pruebas, incluye WAV generados por Python
+node test/roundtrip.mjs   # 46 pruebas, incluye WAV generados por Python
 ```
 
 Abre `http://localhost:8790`. El micrófono solo funciona en `localhost` o `https`.
@@ -53,6 +53,6 @@ Con eco simulado (una réplica retardada 100 muestras, ≈2 ms, con la misma amp
 - Con `key=None` (trama v1) el mensaje viaja en claro y se firma con clave vacía: cualquiera puede fabricar tramas. Con clave (trama v2) el mensaje va cifrado y autenticado con una etiqueta de 8 bytes.
 - La protección contra repetición es opcional y del receptor: hay que pasar un `ReplayGuard` a `receive`. Exige relojes razonablemente sincronizados (ventana de 120 s por defecto).
 - Cada bloque Reed-Solomon se valida por separado, pero un mensaje de varios fragmentos solo se recupera si llegan todos. `send(..., repeat=N)` lo envía N veces para rellenar huecos, a costa de N veces el tiempo de aire.
-- El prefijo cíclico solo cubre ecos de menos de unos 5 ms y no hay seguimiento de reloj. El eco de una sala real no está medido.
+- Los símbolos largos cuestan tasa: un bloque de `robust` dura unos 10 s. No hay seguimiento de reloj ni búsqueda fina de alineación (ggwave prueba 16 desplazamientos por trama). Los valores de tramas y paridad se eligieron con mediciones de un solo equipo y sala (`diagnostico_aire/`).
 
 `docs/SPEC.md` es la especificación que se dio al agente que escribió el código inicial.

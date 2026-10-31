@@ -5,12 +5,10 @@ import {
   wavDecode,
   ReplayGuard,
   PROFILES,
+  FRAMES,
   FS,
-  SYMBOL,
-  CYCLIC_PREFIX,
   CHIRP_LEN,
-  GUARD,
-  dataLen,
+  signalSeconds,
 } from "./spacewases.js";
 
 const PROFILE_LABELS = {
@@ -48,9 +46,10 @@ const localResult = document.getElementById("local-result");
 for (const select of [sendProfile, localProfile]) {
   for (const name of Object.keys(PROFILES)) {
     const [, chunk, parity] = PROFILES[name];
+    const symbolMs = Math.round((FRAMES[name] * 1024 * 1000) / FS);
     const option = document.createElement("option");
     option.value = name;
-    option.textContent = `${PROFILE_LABELS[name]} · ${chunk} B por bloque · RS ${parity}`;
+    option.textContent = `${PROFILE_LABELS[name]} · símbolo de ${symbolMs} ms · ${chunk} B por bloque · RS ${parity}`;
     select.append(option);
   }
   select.value = "normal";
@@ -71,14 +70,6 @@ function repeatCount() {
   return value >= 1 && value <= 3 ? value : 1;
 }
 
-function estimateSeconds(byteLength, profileName, keyed = false, repeat = 1) {
-  const [, chunk, parity] = PROFILES[profileName];
-  const total = Math.max(1, Math.ceil(byteLength / chunk));
-  const raw = repeat * total * (dataLen(chunk, keyed) + parity);
-  const samples = 2 * CHIRP_LEN + 2 * GUARD + raw * (SYMBOL + CYCLIC_PREFIX);
-  return samples / FS;
-}
-
 function updateDuration() {
   const bytes = encoder.encode(sendText.value).length;
   const profile = sendProfile.value;
@@ -88,7 +79,7 @@ function updateDuration() {
     durationLabel.textContent = `Mensaje demasiado largo para el perfil ${PROFILE_LABELS[profile]}.`;
     return;
   }
-  const seconds = estimateSeconds(bytes, profile, keyFrom(sendKey) !== null, repeatCount());
+  const seconds = signalSeconds(bytes, profile, keyFrom(sendKey) !== null, repeatCount());
   const formatted = seconds.toLocaleString("es", {
     minimumFractionDigits: 1,
     maximumFractionDigits: 1,
@@ -196,8 +187,10 @@ downloadButton.addEventListener("click", async () => {
   }
 });
 
-const RING_SECONDS = 25;
-const SCAN_SECONDS = 20;
+// Un bloque en robust dura unos 10 s (78 simbolos de 128 ms); la ventana admite
+// mensajes de dos o tres bloques.
+const RING_SECONDS = 40;
+const SCAN_SECONDS = 32;
 const ring = new Float32Array(FS * RING_SECONDS);
 
 let ringPosition = 0;

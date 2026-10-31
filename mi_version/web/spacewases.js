@@ -25,13 +25,21 @@ export function dataLen(chunk, keyed) {
   return keyed ? HEADER_LEN_V2 + chunk + HMAC_LEN_V2 : HEADER_LEN + chunk + HMAC_LEN;
 }
 
+// [id, chunk, paridad RS] de la capa de trama (igual que api.PROFILES en Python).
 export const PROFILES = {
   robust: [0, 48, 20],
-  normal: [1, 48, 10],
-  fast: [2, 48, 6],
+  normal: [1, 48, 32],
+  fast: [2, 48, 20],
 };
 
-const PROFILE_ORDER = [PROFILES.robust, PROFILES.normal, PROFILES.fast];
+// Tramas de 1024 muestras por simbolo (igual que api.FRAMES en Python).
+export const FRAMES = {
+  robust: 6,
+  normal: 3,
+  fast: 3,
+};
+
+const RECEIVE_ORDER = ["robust", "normal", "fast"];
 
 const GF_POLY = 0x11d;
 const GF_SIZE = 256;
@@ -247,41 +255,60 @@ const CHIRP_REVERSED = CHIRP.slice().reverse();
 let CHIRP_ENERGY = 0;
 for (let i = 0; i < CHIRP.length; i++) CHIRP_ENERGY += CHIRP[i] * CHIRP[i];
 
-// Cada simbolo ocupa CYCLIC_PREFIX + SYMBOL muestras: el prefijo es la continuacion
-// periodica del tono y el receptor analiza solo las SYMBOL muestras posteriores.
-const SYMBOL_PERIOD = CYCLIC_PREFIX + SYMBOL;
+// Forma de un simbolo (igual que modem._layout en Python). Con frames == 1: prefijo
+// ciclico de CYCLIC_PREFIX muestras + una trama. Con frames > 1: frames tramas del
+// mismo tono; la primera hace de guarda frente a la cola del simbolo anterior y el
+// receptor suma las demas antes de la FFT, como ggwave.
+function symbolLayout(frames) {
+  if (!Number.isInteger(frames) || frames < 1) throw new Error("frames debe ser >= 1");
+  const lead = frames === 1 ? CYCLIC_PREFIX : SYMBOL;
+  const analyzed = Math.max(1, frames - 1);
+  return { lead, analyzed, period: lead + analyzed * SYMBOL };
+}
 
-function makeSymbolEnvelope() {
-  const env = new Float64Array(SYMBOL_PERIOD);
+function makeSymbolEnvelope(period) {
+  const env = new Float64Array(period);
   env.fill(1);
-  const ramp = Math.min(SYMBOL_RAMP, Math.trunc(SYMBOL_PERIOD / 2));
+  const ramp = Math.min(SYMBOL_RAMP, Math.trunc(period / 2));
   const edge = new Float64Array(ramp);
   for (let i = 0; i < ramp; i++) {
     const r = i / Math.max(ramp - 1, 1);
     edge[i] = 0.5 * (1 - Math.cos(Math.PI * r));
   }
   for (let i = 0; i < ramp; i++) env[i] *= edge[i];
-  for (let i = 0; i < ramp; i++) env[SYMBOL_PERIOD - ramp + i] *= edge[ramp - 1 - i];
+  for (let i = 0; i < ramp; i++) env[period - ramp + i] *= edge[ramp - 1 - i];
   return env;
 }
 
-const SYMBOL_ENVELOPE = makeSymbolEnvelope();
-
-function makeToneTable(offset) {
+function makeToneTable(offset, lead, period) {
   const table = new Array(N_TONES);
   for (let k = 0; k < N_TONES; k++) {
     const freq = BASE_BIN + offset + TONE_STEP * k;
-    const tone = new Float64Array(SYMBOL_PERIOD);
-    for (let n = 0; n < SYMBOL_PERIOD; n++) {
-      tone[n] = TONE_AMP * Math.sin((2 * Math.PI * (n - CYCLIC_PREFIX) * freq) / SYMBOL);
+    const tone = new Float64Array(period);
+    for (let n = 0; n < period; n++) {
+      tone[n] = TONE_AMP * Math.sin((2 * Math.PI * (n - lead) * freq) / SYMBOL);
     }
     table[k] = tone;
   }
   return table;
 }
 
-const TONES_A = makeToneTable(0);
-const TONES_B = makeToneTable(3);
+const shapeCache = new Map();
+
+function symbolShape(frames) {
+  let shape = shapeCache.get(frames);
+  if (!shape) {
+    const layout = symbolLayout(frames);
+    shape = {
+      ...layout,
+      envelope: makeSymbolEnvelope(layout.period),
+      tonesA: makeToneTable(0, layout.lead, layout.period),
+      tonesB: makeToneTable(3, layout.lead, layout.period),
+    };
+    shapeCache.set(frames, shape);
+  }
+  return shape;
+}
 
 const planCache = new Map();
 
@@ -469,7 +496,8 @@ function toneScores(power, offset) {
   return best;
 }
 
-function demodulate(signal, onStatus) {
+// Busca el chirp inicial y el final una sola vez; los perfiles comparten la sincronia.
+function synchronize(signal, onStatus) {
   const s = toFloat64Array(signal);
   if (s.length === 0) {
     if (onStatus) onStatus({ detected: false, score: 0 });
@@ -483,16 +511,19 @@ function demodulate(signal, onStatus) {
   if (onStatus) onStatus({ detected: true, score: found.score });
 
   const dataStart = found.index + CHIRP_LEN + GUARD;
-  if (dataStart >= s.length) return new Uint8Array(0);
-
-  const endFound = findChirpInternal(s.subarray(dataStart), true);
-  let count;
-  if (endFound && endFound.score >= SYNC_THRESHOLD) {
-    const endStart = dataStart + endFound.index;
-    count = Math.max(0, Math.trunc((endStart - GUARD - dataStart) / SYMBOL_PERIOD));
-  } else {
-    count = Math.max(0, Math.trunc((s.length - dataStart) / SYMBOL_PERIOD));
+  let dataEnd = s.length;
+  if (dataStart < s.length) {
+    const endFound = findChirpInternal(s.subarray(dataStart), true);
+    if (endFound && endFound.score >= SYNC_THRESHOLD) dataEnd = dataStart + endFound.index - GUARD;
   }
+  return { s, dataStart, dataEnd, endKnown: dataEnd !== s.length };
+}
+
+function demodulateSynced(sync, frames) {
+  const { s, dataStart, dataEnd } = sync;
+  if (dataStart >= s.length) return new Uint8Array(0);
+  const { lead, analyzed, period } = symbolLayout(frames);
+  const count = Math.max(0, Math.trunc((dataEnd - dataStart) / period));
   if (count === 0) return new Uint8Array(0);
 
   const out = new Uint8Array(count);
@@ -502,13 +533,18 @@ function demodulate(signal, onStatus) {
   let written = 0;
 
   for (let b = 0; b < count; b++) {
-    const offset = dataStart + b * SYMBOL_PERIOD + CYCLIC_PREFIX;
-    if (offset + SYMBOL > s.length) break;
+    const offset = dataStart + b * period + lead;
+    if (offset + analyzed * SYMBOL > s.length) break;
+    re.fill(0);
+    for (let f = 0; f < analyzed; f++) {
+      const base = offset + f * SYMBOL;
+      for (let i = 0; i < SYMBOL; i++) re[i] += s[base + i];
+    }
     let mean = 0;
-    for (let i = 0; i < SYMBOL; i++) mean += s[offset + i];
+    for (let i = 0; i < SYMBOL; i++) mean += re[i];
     mean /= SYMBOL;
     for (let i = 0; i < SYMBOL; i++) {
-      re[i] = s[offset + i] - mean;
+      re[i] -= mean;
       im[i] = 0;
     }
     fft(re, im, false);
@@ -521,23 +557,27 @@ function demodulate(signal, onStatus) {
   return out.slice(0, written);
 }
 
-export function modulate(data) {
+export function demodulate(signal, onStatus = null, frames = 1) {
+  const sync = synchronize(signal, onStatus);
+  return sync === null ? null : demodulateSynced(sync, frames);
+}
+
+export function modulate(data, frames = 1) {
   const bytes = data instanceof Uint8Array ? data : Uint8Array.from(data);
+  const { period, envelope, tonesA, tonesB } = symbolShape(frames);
   const symbols = bytes.length;
-  const total = 2 * CHIRP_LEN + 2 * GUARD + symbols * SYMBOL_PERIOD;
+  const total = 2 * CHIRP_LEN + 2 * GUARD + symbols * period;
   const out = new Float32Array(total);
   out.set(CHIRP, 0);
   let offset = CHIRP_LEN + GUARD;
   for (let s = 0; s < symbols; s++) {
     const value = bytes[s];
-    const high = value >> 4;
-    const low = value & 0x0f;
-    const ta = TONES_A[high];
-    const tb = TONES_B[low];
-    for (let i = 0; i < SYMBOL_PERIOD; i++) {
-      out[offset + i] = (ta[i] + tb[i]) * SYMBOL_ENVELOPE[i];
+    const ta = tonesA[value >> 4];
+    const tb = tonesB[value & 0x0f];
+    for (let i = 0; i < period; i++) {
+      out[offset + i] = (ta[i] + tb[i]) * envelope[i];
     }
-    offset += SYMBOL_PERIOD;
+    offset += period;
   }
   offset += GUARD;
   for (let i = 0; i < CHIRP_LEN; i++) out[offset + i] = CHIRP_REVERSED[i];
@@ -872,13 +912,29 @@ export async function send(msg, key = null, profile = "normal", repeat = 1) {
   const [profileId, chunk, parity] = PROFILES[profile];
   const bytes = msg instanceof Uint8Array ? msg : Uint8Array.from(msg);
   const raw = await packMessage(bytes, key, profileId, chunk, parity, null, repeat);
-  return modulate(raw);
+  return modulate(raw, FRAMES[profile]);
 }
 
+// Duracion en segundos de la senal que send() generaria (para la interfaz).
+export function signalSeconds(byteLength, profile, keyed = false, repeat = 1) {
+  const [, chunk, parity] = PROFILES[profile];
+  const blocks = Math.max(1, Math.ceil(byteLength / chunk));
+  const symbols = repeat * blocks * (dataLen(chunk, keyed) + parity);
+  return (2 * CHIRP_LEN + 2 * GUARD + symbols * symbolLayout(FRAMES[profile]).period) / FS;
+}
+
+// Cada perfil usa un largo de simbolo distinto: se sincroniza una vez y se prueba cada uno.
 export async function receive(signal, key = null, onStatus = null, guard = null) {
-  const raw = demodulate(signal, onStatus);
-  if (raw === null) return null;
-  return decodeStream(raw, key, PROFILE_ORDER, guard);
+  if (guard !== null) guard.lastReason = null;
+  const sync = synchronize(signal, onStatus);
+  if (sync === null) return null;
+  for (const name of RECEIVE_ORDER) {
+    const raw = demodulateSynced(sync, FRAMES[name]);
+    const result = await decodeStream(raw, key, [PROFILES[name]], guard);
+    if (result !== null) return result;
+    if (guard !== null && guard.lastReason !== null) return null;
+  }
+  return null;
 }
 
 export function wavEncode(signal) {
