@@ -19,6 +19,7 @@ Módem acústico propio en Python (solo `numpy` y la biblioteca estándar) para 
 cd web
 python -m http.server 8790
 node test/roundtrip.mjs   # 46 pruebas, incluye WAV generados por Python
+node test/stream.mjs      # 6 pruebas del receptor en flujo
 ```
 
 Abre `http://localhost:8790`. El micrófono solo funciona en `localhost` o `https`.
@@ -36,17 +37,21 @@ La clave opcional se pasa con `--key` o, mejor, con la variable de entorno `SPAC
 
 ## Resultados
 
-Con ruido blanco gaussiano **simulado** (mensaje de 16 B, 100 intentos por punto, semilla fija; `bench_resultados.csv` y `bench_bps.csv`):
+**Por aire** (`aire_2026-10-31_tramas.csv`): altavoz y micrófono integrados de un portátil, una sala, volumen del sistema fijo, mensaje de 16 B, 10 ensayos por punto; la ganancia digital baja la señal emitida.
 
-| Perfil | 100 % de éxito desde | Tasa neta |
-|---|---|---|
-| robust | −10 dB | 53,4 bps |
-| normal | −10 dB | 60,1 bps |
-| fast | −10 dB | 63,3 bps |
+| Ganancia | robust | normal | fast |
+|---|---|---|---|
+| 1,0 | 8/10 | 6/10 | 9/10 |
+| 0,5 | 9/10 | 10/10 | 9/10 |
+| 0,25 | 8/10 | 9/10 | 9/10 |
+| 0,12 | 10/10 | 10/10 | 10/10 |
+| 0,06 | 10/10 | 9/10 | 9/10 |
+| 0,03 | 2/10 | 3/10 | 2/10 |
+| **Total** | **47/60** | **47/60** | **48/60** |
 
-El prefijo cíclico (256 muestras por símbolo de 1024) costó un 25 % de tasa neta; antes eran 64,6 / 72,5 / 76,1 bps. La tasa de éxito con ruido blanco mejoró (p. ej. robust a −12 dB pasó de 33 a 89 de 100), probablemente porque la ventana de análisis ya no incluye las rampas de la envolvente; no se ha aislado la causa.
+Con el diseño anterior (símbolos de una trama) la misma prueba dio 7/60, 1/60 y 1/60 (`aire_2026-10-31.csv`); el diagnóstico está en `diagnostico_aire/`. Es un solo equipo y una sala: falta repetirlo en otros.
 
-Con eco simulado (una réplica retardada 100 muestras, ≈2 ms, con la misma amplitud) el módem sin prefijo falla decenas de bytes de 200 y con prefijo casi ninguno; con retardos mayores que el prefijo (≥ 300 muestras) no hay mejora. Estas cifras son de simulación, no de aire. Tampoco se compararon con ggwave bajo las mismas condiciones, así que no deben leerse como una ventaja sobre él. La prueba real con altavoz y micrófono está **pendiente**: hay una serie parcial (168 de 180 ensayos, `aire_resultados.csv`) sin analizar y cuyas condiciones no se controlaron hasta el final, así que no es un resultado.
+**Simulación con ruido blanco** (16 B, 100 intentos por punto, semilla fija; `bench_resultados.csv` y `bench_bps.csv`): los tres perfiles decodifican el 100 % desde −12 dB, el piso del banco. Tasa neta con 16 B: robust 12,4 bps, normal 21,1 y fast 24,1; cada bloque se rellena a 48 B, así que los mensajes cortos pagan el bloque entero. No se comparó con ggwave en las mismas condiciones.
 
 ## Límites conocidos
 

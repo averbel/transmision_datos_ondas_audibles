@@ -7,8 +7,8 @@ import {
   PROFILES,
   FRAMES,
   FS,
-  CHIRP_LEN,
   signalSeconds,
+  StreamReceiver,
 } from "./spacewases.js";
 
 const PROFILE_LABELS = {
@@ -86,8 +86,8 @@ function updateDuration() {
     maximumFractionDigits: 1,
   });
   let text = `Duración estimada: ${formatted} s · ${bytes} B`;
-  if (seconds > SCAN_SECONDS) {
-    text += ` · más de ${SCAN_SECONDS} s: la escucha en vivo no la decodificará; usa un WAV o menos repeticiones`;
+  if (seconds > MAX_LIVE_SECONDS) {
+    text += ` · más de ${MAX_LIVE_SECONDS} s: la escucha en vivo no la decodificará; usa un WAV o menos repeticiones`;
   }
   durationLabel.textContent = text;
 }
@@ -188,14 +188,12 @@ downloadButton.addEventListener("click", async () => {
   }
 });
 
-// Un bloque en robust dura unos 10 s (78 simbolos de 128 ms); la ventana admite
-// mensajes de dos o tres bloques.
-const RING_SECONDS = 40;
-const SCAN_SECONDS = 32;
-const ring = new Float32Array(FS * RING_SECONDS);
+// El microfono alimenta un receptor en flujo: detecta el chirp de inicio, graba
+// hasta el de fin y decodifica en ese momento.
+const MAX_LIVE_SECONDS = 90;
+const liveReceiver = new StreamReceiver({ maxSeconds: MAX_LIVE_SECONDS });
+let pendingAudio = [];
 
-let ringPosition = 0;
-let ringFilled = 0;
 let captureRate = FS;
 let listening = false;
 let starting = false;
@@ -209,33 +207,21 @@ let silentGain = null;
 let analyserNode = null;
 let spectrumFrame = 0;
 
-function clearRing() {
-  ringPosition = 0;
-  ringFilled = 0;
+function clearLiveAudio() {
+  pendingAudio = [];
+  liveReceiver.reset();
 }
 
-function pushRing(input) {
-  const capacity = ring.length;
-  for (let i = 0; i < input.length; i++) {
-    ring[ringPosition] = input[i];
-    ringPosition = (ringPosition + 1) % capacity;
-    if (ringFilled < capacity) ringFilled++;
+function takePendingAudio() {
+  const total = pendingAudio.reduce((n, part) => n + part.length, 0);
+  const out = new Float32Array(total);
+  let offset = 0;
+  for (const part of pendingAudio) {
+    out.set(part, offset);
+    offset += part.length;
   }
-}
-
-function getWindow(limit) {
-  const length = Math.min(ringFilled, limit);
-  if (length <= 0) return new Float32Array(0);
-  const output = new Float32Array(length);
-  const start = (ringPosition - length + ring.length) % ring.length;
-  if (start + length <= ring.length) {
-    output.set(ring.subarray(start, start + length));
-  } else {
-    const first = ring.length - start;
-    output.set(ring.subarray(start));
-    output.set(ring.subarray(0, length - first), first);
-  }
-  return output;
+  pendingAudio = [];
+  return out;
 }
 
 function resampleLinear(input, fromRate, toRate) {
@@ -437,7 +423,7 @@ async function startListening() {
     processorNode = micContext.createScriptProcessor(4096, 1, 1);
     processorNode.onaudioprocess = (event) => {
       if (!listening) return;
-      pushRing(event.inputBuffer.getChannelData(0));
+      pendingAudio.push(Float32Array.from(event.inputBuffer.getChannelData(0)));
     };
     silentGain = micContext.createGain();
     silentGain.gain.value = 0;
@@ -445,14 +431,14 @@ async function startListening() {
     processorNode.connect(silentGain);
     silentGain.connect(micContext.destination);
 
-    clearRing();
+    clearLiveAudio();
     liveGuard = new ReplayGuard();
     listening = true;
     listenButton.textContent = "Detener";
     listenButton.classList.add("active");
     setStatus(receiveStatus, "Escuchando…", "busy");
     drawSpectrum();
-    scanTimer = window.setTimeout(scanLoop, 700);
+    scanTimer = window.setTimeout(scanLoop, 200);
   } catch (error) {
     stopListening();
     setStatus(receiveStatus, `No se pudo iniciar la escucha: ${error.message}`, "error");
@@ -479,38 +465,28 @@ listenButton.addEventListener("click", async () => {
 let liveGuard = new ReplayGuard();
 
 async function scanOnce() {
-  const limit = Math.min(ringFilled, FS * SCAN_SECONDS);
-  if (limit < CHIRP_LEN * 2) return;
-  let windowSamples = getWindow(limit);
-  if (captureRate !== FS) windowSamples = resampleLinear(windowSamples, captureRate, FS);
-  let detected = false;
+  if (pendingAudio.length === 0) return;
+  let samples = takePendingAudio();
+  if (captureRate !== FS) samples = resampleLinear(samples, captureRate, FS);
   const key = keyFrom(receiveKey);
   const guard = key !== null && replayCheck.checked ? liveGuard : null;
-  const message = await receive(
-    windowSamples,
-    key,
-    (info) => {
-      if (info.detected) detected = true;
-    },
-    guard
-  );
-  if (message !== null) {
-    addMessage(message, key !== null ? "decodificado · cifrado" : "decodificado · sin cifrar");
+  const event = await liveReceiver.push(samples, key, guard);
+  if (event.message !== null) {
+    addMessage(event.message, key !== null ? "decodificado · cifrado" : "decodificado · sin cifrar");
     setStatus(receiveStatus, "Decodificado.", "ok");
-    clearRing();
-    return;
-  }
-  if (guard !== null && guard.lastReason !== null) {
+  } else if (event.rejected !== null) {
     const why =
-      guard.lastReason === "repetido"
+      event.rejected === "repetido"
         ? "ya se había recibido (posible repetición)"
         : "es antiguo o la hora de uno de los dispositivos no es correcta";
     setStatus(receiveStatus, `Mensaje descartado: ${why}.`, "error");
-    clearRing();
-    return;
+  } else if (event.failed) {
+    setStatus(receiveStatus, "Se detectó una señal pero no se pudo decodificar. Revisa la clave o acércate.", "error");
+  } else if (event.state === "recording") {
+    setStatus(receiveStatus, "Señal detectada; recibiendo…", "busy");
+  } else if (receiveStatus.dataset.kind === "busy") {
+    setStatus(receiveStatus, "Escuchando…", "busy");
   }
-  if (detected) setStatus(receiveStatus, "Señal detectada; intentando decodificar…", "busy");
-  else setStatus(receiveStatus, "Escuchando…", "busy");
 }
 
 async function scanLoop() {
@@ -525,7 +501,7 @@ async function scanLoop() {
       scanning = false;
     }
   }
-  if (listening) scanTimer = window.setTimeout(scanLoop, 700);
+  if (listening) scanTimer = window.setTimeout(scanLoop, 200);
 }
 
 wavFile.addEventListener("change", async () => {
