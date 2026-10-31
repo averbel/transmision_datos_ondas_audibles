@@ -26,6 +26,11 @@ FRAMES: dict[str, int] = {
 _PROFILE_ORDER = [PROFILES["robust"], PROFILES["normal"], PROFILES["fast"]]
 _RECEIVE_ORDER = ["robust", "normal", "fast"]
 
+# Desplazamientos (muestras) de la ventana de analisis que se prueban si la
+# posicion estimada por el chirp no decodifica. Los negativos caen dentro de la
+# trama de guarda; el positivo cubre un chirp detectado antes de tiempo.
+ALIGN_OFFSETS = (0, -256, -512, 256)
+
 
 def send(msg: bytes, key: bytes | None = None, profile: str = "normal",
          repeat: int = 1) -> np.ndarray:
@@ -43,19 +48,23 @@ def send(msg: bytes, key: bytes | None = None, profile: str = "normal",
 
 
 def receive(signal, key: bytes | None = None,
-            guard: frame.ReplayGuard | None = None) -> bytes | None:
+            guard: frame.ReplayGuard | None = None,
+            offsets: tuple[int, ...] = ALIGN_OFFSETS) -> bytes | None:
     """Demodula y valida la senal; devuelve el mensaje o None.
 
     Como cada perfil usa un largo de simbolo distinto, prueba a demodular con
-    cada uno. Pasa un frame.ReplayGuard (compartido entre llamadas) para
+    cada uno, y para cada perfil prueba los desplazamientos de offsets hasta
+    que Reed-Solomon y la etiqueta acepten un mensaje. Pasa un frame.ReplayGuard (compartido entre llamadas) para
     rechazar repeticiones y mensajes viejos; sin el, no hay proteccion contra
     repeticion.
     """
+    sync = modem.synchronize(signal)
+    if sync is None:
+        return None
     for name in _RECEIVE_ORDER:
-        raw = modem.demodulate(signal, frames=FRAMES[name])
-        if raw is None:
-            return None
-        result = frame.decode_stream(raw, key, [PROFILES[name]], guard)
-        if result is not None:
-            return result
+        for offset in offsets:
+            raw = modem.demodulate_synced(sync, frames=FRAMES[name], offset=offset)
+            result = frame.decode_stream(raw, key, [PROFILES[name]], guard)
+            if result is not None:
+                return result
     return None

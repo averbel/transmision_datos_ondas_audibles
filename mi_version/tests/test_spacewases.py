@@ -179,6 +179,17 @@ def test_mensajes_cortos_no_se_rellenan(size):
     assert frame.decode_stream(raw, None, [profile]) == msg
 
 
+def test_busqueda_de_alineacion_recupera_datos_adelantados():
+    """Si los datos llegan antes de lo que indica el chirp, solo la busqueda los recupera."""
+    from spacewases import modem
+    msg = _mensaje(40, seed=31)
+    signal = send(msg, None, "normal")
+    # Quita 500 muestras justo despues del chirp: los datos llegan 500 muestras antes.
+    early = np.concatenate([signal[:modem.CHIRP_LEN], signal[modem.CHIRP_LEN + 500:]])
+    assert receive(early, None, offsets=(0,)) is None
+    assert receive(early, None) == msg
+
+
 def test_repeat_invalido():
     with pytest.raises(ValueError):
         send(b"x", None, "normal", repeat=0)

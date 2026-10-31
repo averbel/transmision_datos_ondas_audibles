@@ -163,38 +163,48 @@ def _tone_scores(spec: np.ndarray, bins: list[int]) -> np.ndarray:
     return out
 
 
+def synchronize(signal) -> tuple[np.ndarray, int, int] | None:
+    """(senal, inicio de datos, fin de datos) segun los chirps; None si no hay sincronia."""
+    s = np.asarray(signal, dtype=np.float64).ravel()
+    if s.size == 0:
+        return None
+    found = _find_chirp(s)
+    if found is None or found[1] < SYNC_THRESHOLD:
+        return None
+    data_start = found[0] + CHIRP_LEN + GUARD
+    data_end = len(s)
+    if data_start < len(s):
+        end_found = _find_chirp(s[data_start:], reverse=True)
+        if end_found is not None and end_found[1] >= SYNC_THRESHOLD:
+            data_end = data_start + end_found[0] - GUARD
+    return s, data_start, data_end
+
+
 def demodulate(signal, cp: int = CYCLIC_PREFIX, frames: int = 1) -> bytes | None:
     """Recupera los bytes de una senal; devuelve None si no hay sincronia.
 
     cp y frames deben coincidir con los usados al modular.
     """
-    s = np.asarray(signal, dtype=np.float64).ravel()
-    if s.size == 0:
-        return None
-    chirp = _chirp()
-    found = _find_chirp(s)
-    if found is None:
-        return None
-    start, score = found
-    if score < SYNC_THRESHOLD:
-        return None
+    sync = synchronize(signal)
+    return None if sync is None else demodulate_synced(sync, cp, frames)
 
-    lead, analyzed, period = _layout(cp, frames)
-    data_start = start + len(chirp) + GUARD
+
+def demodulate_synced(sync: tuple[np.ndarray, int, int], cp: int = CYCLIC_PREFIX,
+                      frames: int = 1, offset: int = 0) -> bytes:
+    """Extrae los simbolos de una senal ya sincronizada.
+
+    offset desplaza las ventanas de analisis (en muestras) respecto a la
+    posicion estimada por el chirp; sirve para buscar la alineacion.
+    """
+    s, data_start, data_end = sync
     if data_start >= len(s):
         return b""
-
-    end_found = _find_chirp(s[data_start:], reverse=True)
-    if end_found is not None and end_found[1] >= SYNC_THRESHOLD:
-        end_start = data_start + end_found[0]
-        count = max(0, (end_start - GUARD - data_start) // period)
-    else:
-        count = max(0, (len(s) - data_start) // period)
-
+    lead, analyzed, period = _layout(cp, frames)
+    count = max(0, (data_end - data_start - offset) // period)
     if count == 0:
         return b""
-    idx = data_start + lead + np.arange(count) * period
-    idx = idx[idx + analyzed * SYMBOL <= len(s)]
+    idx = data_start + lead + offset + np.arange(count) * period
+    idx = idx[(idx >= 0) & (idx + analyzed * SYMBOL <= len(s))]
     if len(idx) == 0:
         return b""
     window = np.arange(SYMBOL)[None, :]

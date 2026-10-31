@@ -62,6 +62,10 @@ export const FRAMES = {
 
 const RECEIVE_ORDER = ["robust", "normal", "fast"];
 
+// Desplazamientos (muestras) de la ventana de analisis que se prueban si la posicion
+// estimada por el chirp no decodifica (igual que api.ALIGN_OFFSETS en Python).
+export const ALIGN_OFFSETS = [0, -256, -512, 256];
+
 const GF_POLY = 0x11d;
 const GF_SIZE = 256;
 const GF_EXP = new Uint8Array(512);
@@ -540,11 +544,12 @@ function synchronize(signal, onStatus) {
   return { s, dataStart, dataEnd, endKnown: dataEnd !== s.length };
 }
 
-function demodulateSynced(sync, frames) {
+// offset desplaza las ventanas de analisis respecto a la posicion estimada por el chirp.
+function demodulateSynced(sync, frames, offset = 0) {
   const { s, dataStart, dataEnd } = sync;
   if (dataStart >= s.length) return new Uint8Array(0);
   const { lead, analyzed, period } = symbolLayout(frames);
-  const count = Math.max(0, Math.trunc((dataEnd - dataStart) / period));
+  const count = Math.max(0, Math.trunc((dataEnd - dataStart - offset) / period));
   if (count === 0) return new Uint8Array(0);
 
   const out = new Uint8Array(count);
@@ -554,11 +559,11 @@ function demodulateSynced(sync, frames) {
   let written = 0;
 
   for (let b = 0; b < count; b++) {
-    const offset = dataStart + b * period + lead;
-    if (offset + analyzed * SYMBOL > s.length) break;
+    const start = dataStart + b * period + lead + offset;
+    if (start < 0 || start + analyzed * SYMBOL > s.length) break;
     re.fill(0);
     for (let f = 0; f < analyzed; f++) {
-      const base = offset + f * SYMBOL;
+      const base = start + f * SYMBOL;
       for (let i = 0; i < SYMBOL; i++) re[i] += s[base + i];
     }
     let mean = 0;
@@ -986,16 +991,19 @@ export function signalSeconds(byteLength, profile, keyed = false, repeat = 1) {
   return (2 * CHIRP_LEN + 2 * GUARD + symbols * symbolLayout(FRAMES[profile]).period) / FS;
 }
 
-// Cada perfil usa un largo de simbolo distinto: se sincroniza una vez y se prueba cada uno.
+// Cada perfil usa un largo de simbolo distinto: se sincroniza una vez y se prueba cada
+// perfil con cada desplazamiento de ALIGN_OFFSETS hasta que Reed-Solomon y la etiqueta acepten.
 export async function receive(signal, key = null, onStatus = null, guard = null) {
   if (guard !== null) guard.lastReason = null;
   const sync = synchronize(signal, onStatus);
   if (sync === null) return null;
   for (const name of RECEIVE_ORDER) {
-    const raw = demodulateSynced(sync, FRAMES[name]);
-    const result = await decodeStream(raw, key, [PROFILES[name]], guard);
-    if (result !== null) return result;
-    if (guard !== null && guard.lastReason !== null) return null;
+    for (const offset of ALIGN_OFFSETS) {
+      const raw = demodulateSynced(sync, FRAMES[name], offset);
+      const result = await decodeStream(raw, key, [PROFILES[name]], guard);
+      if (result !== null) return result;
+      if (guard !== null && guard.lastReason !== null) return null;
+    }
   }
   return null;
 }

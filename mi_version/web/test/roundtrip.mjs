@@ -177,6 +177,23 @@ for (const [file, keyText, expected] of fixtures) {
   }
 }
 
+{
+  // Datos 500 muestras antes de lo que indica el chirp: la busqueda de alineacion los recupera.
+  const name = "búsqueda de alineación recupera datos adelantados";
+  try {
+    const message = makeMessage(40);
+    const signal = await send(message, null, "normal");
+    const early = new Float32Array(signal.length - 500);
+    early.set(signal.subarray(0, CHIRP_LEN), 0);
+    early.set(signal.subarray(CHIRP_LEN + 500), CHIRP_LEN);
+    const result = await receive(early, null);
+    if (result !== null && equalBytes(result, message)) pass(name);
+    else fail(name);
+  } catch (error) {
+    fail(name, error.message);
+  }
+}
+
 for (const frames of [1, 2, 3, 6]) {
   const name = `módem con símbolos de ${frames} trama(s)`;
   try {
