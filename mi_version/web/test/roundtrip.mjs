@@ -3,6 +3,7 @@ import {
   send,
   receive,
   wavDecode,
+  wavEncode,
   PROFILES,
   FRAMES,
   ReplayGuard,
@@ -280,6 +281,26 @@ function gaussian(rng) {
     else fail(name, `se esperaban al menos ${Math.ceil(attempts * 0.9)}`);
   } catch (error) {
     fail("AWGN 0 dB robust", error.message);
+  }
+}
+
+{
+  // Cabeceras WAV que no son PCM de 16 bits o son incoherentes se rechazan con un error claro.
+  const good = wavEncode(new Float32Array(100));
+  const cases = [
+    ["formato no PCM", (v) => v.setUint16(20, 3, true)],
+    ["cero canales", (v) => v.setUint16(22, 0, true)],
+    ["blockAlign incoherente", (v) => v.setUint16(32, 1, true)],
+  ];
+  for (const [label, mutate] of cases) {
+    const bytes = good.slice();
+    mutate(new DataView(bytes.buffer));
+    try {
+      wavDecode(bytes);
+      fail(`WAV inválido rechazado: ${label}`, "no lanzó error");
+    } catch {
+      pass(`WAV inválido rechazado: ${label}`);
+    }
   }
 }
 

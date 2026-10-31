@@ -1,5 +1,5 @@
 // Pruebas del receptor en flujo: se le pasa el audio en trozos, como llega del microfono.
-import { send, StreamReceiver, ReplayGuard, FS } from "../spacewases.js";
+import { send, StreamReceiver, ReplayGuard, Resampler, FS } from "../spacewases.js";
 
 let passed = 0;
 let failed = 0;
@@ -132,6 +132,61 @@ await check("señal cortada sin chirp final: falla al llegar al tope y vuelve a 
   const audio = concat([noise(1, 0.01, rng), truncated, noise(6, 0.01, rng)]);
   const events = await stream(receiver, audio, rng);
   return (events.length === 1 && events[0].failed && receiver.state === "idle") || `eventos: ${events.length}`;
+});
+
+// Remuestreo lineal de una sola vez, como "microfono" a otra frecuencia en las pruebas.
+function resampleOnce(input, fromRate, toRate) {
+  const step = fromRate / toRate;
+  const out = new Float32Array(Math.floor((input.length - 1) / step) + 1);
+  for (let i = 0; i < out.length; i++) {
+    const index = Math.floor(i * step);
+    const fraction = i * step - index;
+    const b = input[Math.min(index + 1, input.length - 1)];
+    out[i] = input[index] + (b - input[index]) * fraction;
+  }
+  return out;
+}
+
+await check("Resampler: en trozos da lo mismo que de una vez", async () => {
+  const rng = makeRng(7);
+  const input = noise(1, 0.3, rng);
+  for (const rate of [16000, 44100, 96000]) {
+    const whole = resampleOnce(input, rate, FS);
+    const resampler = new Resampler(rate, FS);
+    const parts = [];
+    for (let off = 0; off < input.length; ) {
+      const size = 1 + Math.floor(rng() * 5000);
+      parts.push(resampler.push(input.subarray(off, off + size)));
+      off += size;
+    }
+    const chunked = concat(parts);
+    if (Math.abs(chunked.length - whole.length) > 1) return `${rate}: ${chunked.length} vs ${whole.length}`;
+    const n = Math.min(chunked.length, whole.length);
+    for (let i = 0; i < n; i++) {
+      if (Math.abs(chunked[i] - whole[i]) > 1e-5) return `${rate}: difiere en ${i}`;
+    }
+  }
+  return true;
+});
+
+await check("micrófono a 16 y 44,1 kHz remuestreado en lotes de 200 ms", async () => {
+  const rng = makeRng(8);
+  const sig = await send(enc.encode("otra frecuencia"), null, "normal");
+  const audio = concat([noise(1, 0.01, rng), sig, noise(1, 0.01, rng)]);
+  for (const rate of [16000, 44100]) {
+    const mic = resampleOnce(audio, FS, rate);
+    const resampler = new Resampler(rate, FS);
+    const receiver = new StreamReceiver();
+    const batch = Math.round(rate * 0.2);
+    const texts = [];
+    for (let off = 0; off < mic.length; off += batch) {
+      const ev = await receiver.push(resampler.push(mic.subarray(off, off + batch)));
+      if (ev.message !== null) texts.push(dec.decode(ev.message));
+      else if (ev.failed) texts.push("fallo");
+    }
+    if (JSON.stringify(texts) !== JSON.stringify(["otra frecuencia"])) return `${rate}: ${JSON.stringify(texts)}`;
+  }
+  return true;
 });
 
 console.log("");

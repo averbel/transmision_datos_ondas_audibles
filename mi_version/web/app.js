@@ -9,6 +9,7 @@ import {
   FS,
   signalSeconds,
   StreamReceiver,
+  Resampler,
 } from "./spacewases.js?v=20261031";
 
 const PROFILE_LABELS = {
@@ -195,6 +196,7 @@ const liveReceiver = new StreamReceiver({ maxSeconds: MAX_LIVE_SECONDS });
 let pendingAudio = [];
 
 let captureRate = FS;
+let resampler = null;
 let listening = false;
 let starting = false;
 let scanning = false;
@@ -222,22 +224,6 @@ function takePendingAudio() {
   }
   pendingAudio = [];
   return out;
-}
-
-function resampleLinear(input, fromRate, toRate) {
-  if (fromRate === toRate || input.length === 0) return input;
-  const outputLength = Math.max(1, Math.floor((input.length * toRate) / fromRate));
-  const output = new Float32Array(outputLength);
-  const step = fromRate / toRate;
-  for (let i = 0; i < outputLength; i++) {
-    const position = i * step;
-    const index = Math.floor(position);
-    const fraction = position - index;
-    const a = input[Math.min(index, input.length - 1)];
-    const b = input[Math.min(index + 1, input.length - 1)];
-    output[i] = a + (b - a) * fraction;
-  }
-  return output;
 }
 
 function clearSpectrum() {
@@ -361,6 +347,7 @@ function stopListening() {
     spectrumFrame = 0;
   }
   captureRate = FS;
+  resampler = null;
   listenButton.textContent = "Escuchar";
   listenButton.classList.remove("active");
   clearSpectrum();
@@ -406,15 +393,20 @@ async function startListening() {
   try {
     const AudioContextClass = window.AudioContext || window.webkitAudioContext;
     if (!AudioContextClass) throw new Error("este navegador no admite Web Audio");
+    // Se pide 48 kHz; algunos navegadores (Firefox) no conectan un micrófono de otra
+    // frecuencia a ese contexto, y entonces se usa la del sistema y se remuestrea.
     try {
       micContext = new AudioContextClass({ sampleRate: FS });
+      sourceNode = micContext.createMediaStreamSource(micStream);
     } catch {
+      if (micContext) micContext.close().catch(() => {});
       micContext = new AudioContextClass();
+      sourceNode = micContext.createMediaStreamSource(micStream);
     }
     captureRate = micContext.sampleRate;
+    resampler = new Resampler(captureRate, FS);
     if (micContext.state === "suspended") await micContext.resume();
 
-    sourceNode = micContext.createMediaStreamSource(micStream);
     analyserNode = micContext.createAnalyser();
     analyserNode.fftSize = 2048;
     analyserNode.smoothingTimeConstant = 0.75;
@@ -466,8 +458,7 @@ let liveGuard = new ReplayGuard();
 
 async function scanOnce() {
   if (pendingAudio.length === 0) return;
-  let samples = takePendingAudio();
-  if (captureRate !== FS) samples = resampleLinear(samples, captureRate, FS);
+  const samples = resampler.push(takePendingAudio());
   const key = keyFrom(receiveKey);
   const guard = key !== null && replayCheck.checked ? liveGuard : null;
   const event = await liveReceiver.push(samples, key, guard);
@@ -504,9 +495,17 @@ async function scanLoop() {
   if (listening) scanTimer = window.setTimeout(scanLoop, 200);
 }
 
+// Unos 17 min de audio mono a 48 kHz; evita que un archivo enorme cuelgue la pestaña.
+const MAX_WAV_BYTES = 100 * 1024 * 1024;
+
 wavFile.addEventListener("change", async () => {
   const file = wavFile.files && wavFile.files[0];
   if (!file) return;
+  if (file.size > MAX_WAV_BYTES) {
+    setStatus(receiveStatus, "WAV demasiado grande (máximo 100 MB).", "error");
+    wavFile.value = "";
+    return;
+  }
   setStatus(receiveStatus, `Leyendo ${file.name}…`, "busy");
   try {
     const bytes = new Uint8Array(await file.arrayBuffer());

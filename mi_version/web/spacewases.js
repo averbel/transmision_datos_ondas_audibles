@@ -1086,6 +1086,37 @@ export class StreamReceiver {
   }
 }
 
+// Remuestreo lineal en flujo: conserva la posicion fraccionaria y la ultima muestra
+// entre llamadas, asi que pasar el audio en trozos da lo mismo que de una vez.
+export class Resampler {
+  constructor(fromRate, toRate = FS) {
+    this.step = fromRate / toRate;
+    this.position = 0;
+    this.last = null;
+  }
+
+  push(input) {
+    if (this.step === 1) return input;
+    if (input.length === 0) return new Float32Array(0);
+    // Con la muestra anterior delante, el indice 0 es la ultima del trozo previo.
+    const prefix = this.last === null ? 0 : 1;
+    const at = (i) => (i < prefix ? this.last : input[i - prefix]);
+    const available = input.length + prefix;
+    const out = [];
+    let position = this.position;
+    while (Math.floor(position) + 1 < available) {
+      const index = Math.floor(position);
+      const fraction = position - index;
+      const a = at(index);
+      out.push(a + (at(index + 1) - a) * fraction);
+      position += this.step;
+    }
+    this.position = position - (available - 1);
+    this.last = input[input.length - 1];
+    return Float32Array.from(out);
+  }
+}
+
 export function wavEncode(signal) {
   const samples = signal.length;
   const dataSize = samples * 2;
@@ -1143,7 +1174,11 @@ export function wavDecode(bytes) {
     offset = body + size + (size & 1);
   }
   if (!fmt) throw new Error("WAV sin bloque fmt");
+  if (fmt.audioFormat !== 1 && fmt.audioFormat !== 0xfffe) throw new Error("solo se admiten WAV PCM");
   if (fmt.bits !== 16) throw new Error("solo se admiten WAV de 16 bits");
+  if (fmt.channels < 1 || (fmt.blockAlign && fmt.blockAlign !== fmt.channels * 2)) {
+    throw new Error("cabecera WAV incoherente");
+  }
   if (fmt.sampleRate !== FS) throw new Error(`se esperaban ${FS} Hz`);
   const channels = fmt.channels;
   const blockAlign = fmt.blockAlign || channels * 2;

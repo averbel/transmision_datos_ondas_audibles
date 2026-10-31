@@ -18,8 +18,8 @@ Módem acústico propio en Python (solo `numpy` y la biblioteca estándar) para 
 ```bash
 cd web
 python -m http.server 8790
-node test/roundtrip.mjs   # 48 pruebas, incluye WAV generados por Python
-node test/stream.mjs      # 6 pruebas del receptor en flujo
+node test/roundtrip.mjs   # 51 pruebas, incluye WAV generados por Python
+node test/stream.mjs      # 8 pruebas del receptor en flujo y del remuestreo
 ```
 
 Abre `http://localhost:8790`. El micrófono solo funciona en `localhost` o `https`.
@@ -34,6 +34,10 @@ El flujo `.github/workflows/pages.yml` corre las pruebas JS y publica solo `inde
 4. *Actions → Publicar web → Run workflow*. La dirección queda en el resumen del trabajo (`https://<usuario>.github.io/<repositorio>/`).
 
 La página declara una política de seguridad de contenido que solo permite cargar recursos del mismo sitio.
+
+### Publicar en Vercel
+
+Desde `web/`: `npx vercel deploy --prod`. `.vercelignore` deja fuera `SPEC.md` y `test/`, y `vercel.json` añade cabeceras de seguridad (la misma política de contenido más `frame-ancestors 'none'`, `nosniff`, sin referer y micrófono solo para el propio sitio). La regla de cambiar `?v=` en cada publicación es la misma.
 
 ## Uso
 
