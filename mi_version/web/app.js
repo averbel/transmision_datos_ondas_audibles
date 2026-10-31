@@ -10,7 +10,7 @@ import {
   signalSeconds,
   StreamReceiver,
   Resampler,
-} from "./spacewases.js?v=20261031";
+} from "./spacewases.js?v=20261031b";
 
 const PROFILE_LABELS = {
   robust: "Robusto",
@@ -19,52 +19,107 @@ const PROFILE_LABELS = {
 };
 
 const encoder = new TextEncoder();
+const $ = (id) => document.getElementById(id);
 
-const sendText = document.getElementById("send-text");
-const sendProfile = document.getElementById("send-profile");
-const sendKey = document.getElementById("send-key");
-const sendRepeat = document.getElementById("send-repeat");
-const replayCheck = document.getElementById("replay-guard");
-const emitButton = document.getElementById("emit");
-const downloadButton = document.getElementById("download");
-const sendStatus = document.getElementById("send-status");
-const durationLabel = document.getElementById("duration");
+const tabs = {
+  settings: [$("tab-settings"), $("view-settings")],
+  messages: [$("tab-messages"), $("view-messages")],
+  spectrum: [$("tab-spectrum"), $("view-spectrum")],
+};
+const dotMessages = $("dot-messages");
+const dotSpectrum = $("dot-spectrum");
 
-const receiveKey = document.getElementById("receive-key");
-const listenButton = document.getElementById("listen");
-const receiveStatus = document.getElementById("receive-status");
-const spectrumCanvas = document.getElementById("spectrum");
-const wavFile = document.getElementById("wav-file");
-const messagesList = document.getElementById("messages");
+const messagesList = $("messages");
+const rxStatus = $("rx-status");
+const txProgress = $("tx-progress");
+const cancelRxButton = $("cancel-rx");
+const listenButton = $("listen");
+const sendForm = $("send-form");
+const sendText = $("send-text");
+const emitButton = $("emit");
+const durationLabel = $("duration");
 
-const localText = document.getElementById("local-text");
-const localProfile = document.getElementById("local-profile");
-const localSnr = document.getElementById("local-snr");
-const snrValue = document.getElementById("snr-value");
-const localRun = document.getElementById("local-run");
-const localResult = document.getElementById("local-result");
+const spectrumCanvas = $("spectrum");
 
-for (const select of [sendProfile, localProfile]) {
-  for (const name of Object.keys(PROFILES)) {
-    const [, chunk, parity] = PROFILES[name];
-    const symbolMs = Math.round((FRAMES[name] * 1024 * 1000) / FS);
-    const option = document.createElement("option");
-    option.value = name;
-    option.textContent = `${PROFILE_LABELS[name]} (${symbolMs} ms por símbolo)`;
-    option.title = `${chunk} B por bloque, ${parity} B de paridad Reed-Solomon`;
-    select.append(option);
+const volumeInput = $("volume");
+const volumeValue = $("volume-value");
+const protocolsBox = $("protocols");
+const sendRepeat = $("send-repeat");
+const keyInput = $("key");
+const replayCheck = $("replay-guard");
+const downloadButton = $("download");
+const wavFile = $("wav-file");
+const fileStatus = $("file-status");
+const localSnr = $("local-snr");
+const snrValue = $("snr-value");
+const localRun = $("local-run");
+const localResult = $("local-result");
+
+// --- Pestañas ---------------------------------------------------------------
+
+let currentTab = "messages";
+
+function showTab(name) {
+  currentTab = name;
+  for (const [key, [tab, view]] of Object.entries(tabs)) {
+    const selected = key === name;
+    tab.setAttribute("aria-selected", String(selected));
+    tab.tabIndex = selected ? 0 : -1;
+    view.hidden = !selected;
   }
-  select.value = "normal";
+  if (name === "messages") dotMessages.hidden = true;
+  if (name === "spectrum") startSpectrum();
 }
 
-function setStatus(element, text, kind = "") {
-  element.textContent = text;
-  if (kind) element.dataset.kind = kind;
-  else delete element.dataset.kind;
+const tabOrder = Object.keys(tabs);
+for (const [name, [tab]] of Object.entries(tabs)) {
+  tab.addEventListener("click", () => showTab(name));
+  tab.addEventListener("keydown", (event) => {
+    if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
+    const step = event.key === "ArrowRight" ? 1 : -1;
+    const next = tabOrder[(tabOrder.indexOf(name) + step + tabOrder.length) % tabOrder.length];
+    showTab(next);
+    tabs[next][0].focus();
+  });
 }
 
-function keyFrom(input) {
-  return input.value.length ? encoder.encode(input.value) : null;
+// --- Ajustes ----------------------------------------------------------------
+
+let profile = "normal";
+
+for (const name of Object.keys(PROFILES)) {
+  const [, chunk, parity] = PROFILES[name];
+  const symbolMs = Math.round((FRAMES[name] * 1024 * 1000) / FS);
+  const label = document.createElement("label");
+  const radio = document.createElement("input");
+  radio.type = "radio";
+  radio.name = "protocol";
+  radio.value = name;
+  radio.checked = name === profile;
+  radio.addEventListener("change", () => {
+    profile = name;
+    updateComposer();
+  });
+  const text = document.createElement("span");
+  text.textContent = PROFILE_LABELS[name];
+  const detail = document.createElement("span");
+  detail.className = "proto-detail";
+  detail.textContent = `${symbolMs} ms por símbolo · ${parity} B de paridad`;
+  detail.title = `${chunk} B por bloque`;
+  label.append(radio, text, detail);
+  protocolsBox.append(label);
+}
+
+function volume() {
+  return Number(volumeInput.value) / 100;
+}
+
+volumeInput.addEventListener("input", () => {
+  volumeValue.textContent = `${volumeInput.value} %`;
+});
+
+function keyBytes() {
+  return keyInput.value.length ? encoder.encode(keyInput.value) : null;
 }
 
 function repeatCount() {
@@ -72,33 +127,106 @@ function repeatCount() {
   return value >= 1 && value <= 3 ? value : 1;
 }
 
-function updateDuration() {
+function formatSeconds(seconds) {
+  return seconds.toLocaleString("es", { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+}
+
+const MAX_LIVE_SECONDS = 90;
+
+function updateComposer() {
+  sendText.placeholder = `Enviar mensaje con «${PROFILE_LABELS[profile]}»`;
   const bytes = encoder.encode(sendText.value).length;
-  const profile = sendProfile.value;
-  const [, chunk] = PROFILES[profile];
-  const maxBytes = 255 * chunk;
-  if (bytes > maxBytes) {
-    durationLabel.textContent = `Mensaje demasiado largo para el perfil ${PROFILE_LABELS[profile]}.`;
+  if (bytes === 0) {
+    durationLabel.textContent = "";
     return;
   }
-  const seconds = signalSeconds(bytes, profile, keyFrom(sendKey) !== null, repeatCount());
-  const formatted = seconds.toLocaleString("es", {
-    minimumFractionDigits: 1,
-    maximumFractionDigits: 1,
-  });
-  let text = `Duración estimada: ${formatted} s · ${bytes} B`;
-  if (seconds > MAX_LIVE_SECONDS) {
-    text += ` · más de ${MAX_LIVE_SECONDS} s: la escucha en vivo no la decodificará; usa un WAV o menos repeticiones`;
+  const [, chunk] = PROFILES[profile];
+  if (bytes > 255 * chunk) {
+    durationLabel.textContent = `Mensaje demasiado largo para ${PROFILE_LABELS[profile]}.`;
+    return;
   }
+  const seconds = signalSeconds(bytes, profile, keyBytes() !== null, repeatCount());
+  let text = `≈ ${formatSeconds(seconds)} s · ${bytes} B`;
+  if (seconds > MAX_LIVE_SECONDS) text += ` · más de ${MAX_LIVE_SECONDS} s: no se recibirá en vivo; usa un WAV`;
   durationLabel.textContent = text;
 }
 
-sendText.addEventListener("input", updateDuration);
-sendProfile.addEventListener("change", updateDuration);
-sendKey.addEventListener("input", updateDuration);
-sendRepeat.addEventListener("change", updateDuration);
+sendText.addEventListener("input", updateComposer);
+keyInput.addEventListener("input", updateComposer);
+sendRepeat.addEventListener("change", updateComposer);
+
+// --- Historial --------------------------------------------------------------
+
+function timeString(date) {
+  return date.toLocaleTimeString("es", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
+function decodeText(bytes) {
+  try {
+    const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+    return text.length ? text : "(mensaje vacío)";
+  } catch {
+    return Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join(" ");
+  }
+}
+
+// Una línea al estilo de Waver: hora | Recv/Send | protocolo | texto.
+function addLogEntry({ direction, profileName = null, encrypted = false, text, error = false }) {
+  const hint = messagesList.querySelector(".log-hint");
+  if (hint) hint.remove();
+  const item = document.createElement("li");
+  const now = new Date();
+  const time = document.createElement("time");
+  time.className = "meta-line";
+  time.dateTime = now.toISOString();
+  time.textContent = `${timeString(now)} | `;
+  item.append(time);
+
+  const dir = document.createElement("span");
+  dir.className = direction === "Recv" ? "recv" : direction === "Send" ? "send" : "error-text";
+  dir.textContent = direction;
+  item.append(dir, separator());
+
+  if (profileName) {
+    const proto = document.createElement("span");
+    proto.className = "proto";
+    proto.textContent = PROFILE_LABELS[profileName] + (encrypted ? " · cifrado" : "");
+    item.append(proto, separator());
+  }
+
+  const body = document.createElement("span");
+  if (error) body.className = "error-text";
+  body.textContent = text;
+  item.append(body);
+
+  messagesList.append(item);
+  while (messagesList.children.length > 200) messagesList.firstElementChild.remove();
+  messagesList.scrollTop = messagesList.scrollHeight;
+  if (currentTab !== "messages" && direction !== "Send") dotMessages.hidden = false;
+}
+
+function separator() {
+  const span = document.createElement("span");
+  span.className = "meta-line";
+  span.textContent = " | ";
+  return span;
+}
+
+function setRxStatus(text, kind = "") {
+  rxStatus.textContent = text;
+  if (kind) rxStatus.dataset.kind = kind;
+  else delete rxStatus.dataset.kind;
+}
+
+function idleStatus() {
+  if (listening) setRxStatus("Escuchando ondas (longitud variable)…");
+  else setRxStatus("Micrófono apagado");
+}
+
+// --- Envío ------------------------------------------------------------------
 
 let playbackContext = null;
+let transmitting = false;
 
 async function ensurePlaybackContext() {
   const AudioContextClass = window.AudioContext || window.webkitAudioContext;
@@ -114,20 +242,41 @@ async function ensurePlaybackContext() {
   return playbackContext;
 }
 
-let emitBusy = false;
+async function buildSignal() {
+  const signal = await send(encoder.encode(sendText.value), keyBytes(), profile, repeatCount());
+  const gain = volume();
+  if (gain !== 1) for (let i = 0; i < signal.length; i++) signal[i] *= gain;
+  return signal;
+}
 
-emitButton.addEventListener("click", async () => {
-  if (emitBusy) return;
-  emitBusy = true;
+function showTxProgress(context, startTime, seconds) {
+  txProgress.hidden = false;
+  const tick = () => {
+    if (!transmitting) return;
+    txProgress.value = Math.min(1, (context.currentTime - startTime) / seconds);
+    window.requestAnimationFrame(tick);
+  };
+  tick();
+}
+
+function finishTransmission() {
+  transmitting = false;
+  emitButton.disabled = false;
+  txProgress.hidden = true;
+  txProgress.value = 0;
+  // Lo que el micrófono captó durante la emisión es nuestra propia señal: se descarta.
+  clearLiveAudio();
+  idleStatus();
+}
+
+sendForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (transmitting || sendText.value.length === 0) return;
+  transmitting = true;
   emitButton.disabled = true;
-  setStatus(sendStatus, "Generando señal…", "busy");
+  setRxStatus("Generando señal…", "send");
   try {
-    const signal = await send(
-      encoder.encode(sendText.value),
-      keyFrom(sendKey),
-      sendProfile.value,
-      repeatCount()
-    );
+    const signal = await buildSignal();
     const context = await ensurePlaybackContext();
     const buffer = context.createBuffer(1, signal.length, FS);
     buffer.getChannelData(0).set(signal);
@@ -135,24 +284,17 @@ emitButton.addEventListener("click", async () => {
     source.buffer = buffer;
     source.connect(context.destination);
     const seconds = signal.length / FS;
-    setStatus(
-      sendStatus,
-      `Emitiendo ${seconds.toLocaleString("es", {
-        minimumFractionDigits: 1,
-        maximumFractionDigits: 1,
-      })} s…`,
-      "busy"
-    );
-    source.onended = () => {
-      emitBusy = false;
-      emitButton.disabled = false;
-      setStatus(sendStatus, "Emisión terminada.", "ok");
-    };
+    addLogEntry({ direction: "Send", profileName: profile, encrypted: keyBytes() !== null, text: sendText.value });
+    sendText.value = "";
+    updateComposer();
+    setRxStatus(`Enviando ${formatSeconds(seconds)} s`, "send");
+    source.onended = finishTransmission;
+    const startTime = context.currentTime;
     source.start();
+    showTxProgress(context, startTime, seconds);
   } catch (error) {
-    emitBusy = false;
-    emitButton.disabled = false;
-    setStatus(sendStatus, `No se pudo emitir: ${error.message}`, "error");
+    finishTransmission();
+    addLogEntry({ direction: "Error", text: `No se pudo enviar: ${error.message}`, error: true });
   }
 });
 
@@ -160,19 +302,16 @@ let downloadBusy = false;
 
 downloadButton.addEventListener("click", async () => {
   if (downloadBusy) return;
+  if (sendText.value.length === 0) {
+    fileStatus.textContent = "Escribe primero el mensaje en la pestaña Mensajes.";
+    return;
+  }
   downloadBusy = true;
   downloadButton.disabled = true;
-  setStatus(sendStatus, "Preparando WAV…", "busy");
+  fileStatus.textContent = "Preparando WAV…";
   try {
-    const signal = await send(
-      encoder.encode(sendText.value),
-      keyFrom(sendKey),
-      sendProfile.value,
-      repeatCount()
-    );
-    const wav = wavEncode(signal);
-    const blob = new Blob([wav], { type: "audio/wav" });
-    const url = URL.createObjectURL(blob);
+    const wav = wavEncode(await buildSignal());
+    const url = URL.createObjectURL(new Blob([wav], { type: "audio/wav" }));
     const link = document.createElement("a");
     link.href = url;
     link.download = "spacewases.wav";
@@ -180,19 +319,21 @@ downloadButton.addEventListener("click", async () => {
     link.click();
     link.remove();
     window.setTimeout(() => URL.revokeObjectURL(url), 2000);
-    setStatus(sendStatus, "WAV descargado.", "ok");
+    fileStatus.textContent = "WAV guardado.";
   } catch (error) {
-    setStatus(sendStatus, `No se pudo generar el WAV: ${error.message}`, "error");
+    fileStatus.textContent = `No se pudo generar el WAV: ${error.message}`;
   } finally {
     downloadBusy = false;
     downloadButton.disabled = false;
   }
 });
 
-// El microfono alimenta un receptor en flujo: detecta el chirp de inicio, graba
+// --- Recepción en vivo ------------------------------------------------------
+// El micrófono alimenta un receptor en flujo: detecta el chirp de inicio, graba
 // hasta el de fin y decodifica en ese momento.
-const MAX_LIVE_SECONDS = 90;
+
 const liveReceiver = new StreamReceiver({ maxSeconds: MAX_LIVE_SECONDS });
+let liveGuard = new ReplayGuard();
 let pendingAudio = [];
 
 let captureRate = FS;
@@ -207,11 +348,11 @@ let sourceNode = null;
 let processorNode = null;
 let silentGain = null;
 let analyserNode = null;
-let spectrumFrame = 0;
 
 function clearLiveAudio() {
   pendingAudio = [];
   liveReceiver.reset();
+  cancelRxButton.hidden = true;
 }
 
 function takePendingAudio() {
@@ -226,91 +367,6 @@ function takePendingAudio() {
   return out;
 }
 
-function clearSpectrum() {
-  const context = spectrumCanvas.getContext("2d");
-  context.setTransform(1, 0, 0, 1, 0, 0);
-  context.clearRect(0, 0, spectrumCanvas.width, spectrumCanvas.height);
-}
-
-function drawSpectrum() {
-  if (!analyserNode || !micContext) {
-    spectrumFrame = 0;
-    return;
-  }
-  spectrumFrame = window.requestAnimationFrame(drawSpectrum);
-  const ratio = Math.min(window.devicePixelRatio || 1, 2);
-  const width = Math.max(1, Math.floor(spectrumCanvas.clientWidth));
-  const height = Math.max(1, Math.floor(spectrumCanvas.clientHeight));
-  const targetWidth = Math.round(width * ratio);
-  const targetHeight = Math.round(height * ratio);
-  if (spectrumCanvas.width !== targetWidth || spectrumCanvas.height !== targetHeight) {
-    spectrumCanvas.width = targetWidth;
-    spectrumCanvas.height = targetHeight;
-  }
-  const context = spectrumCanvas.getContext("2d");
-  context.setTransform(ratio, 0, 0, ratio, 0, 0);
-  const styles = window.getComputedStyle(document.documentElement);
-  const background = styles.getPropertyValue("--canvas").trim() || "#e8e2d6";
-  const accent = styles.getPropertyValue("--accent").trim() || "#0e6b5b";
-  const line = styles.getPropertyValue("--line").trim() || "#d5cdbd";
-  context.fillStyle = background;
-  context.fillRect(0, 0, width, height);
-
-  const bins = new Uint8Array(analyserNode.frequencyBinCount);
-  analyserNode.getByteFrequencyData(bins);
-  const nyquist = captureRate / 2;
-  const maxFrequency = 8000;
-  const maxBin = Math.min(
-    bins.length - 1,
-    Math.max(1, Math.floor((maxFrequency / nyquist) * bins.length))
-  );
-  const bars = Math.min(110, maxBin + 1);
-  const gap = bars > 70 ? 1 : 2;
-  const barWidth = Math.max(1, (width - gap * (bars - 1)) / bars);
-
-  context.fillStyle = accent;
-  for (let i = 0; i < bars; i++) {
-    const index = Math.round((i / Math.max(1, bars - 1)) * maxBin);
-    const value = bins[index] / 255;
-    const barHeight = Math.max(1, value * (height - 10));
-    const x = i * (barWidth + gap);
-    context.fillRect(x, height - barHeight, barWidth, barHeight);
-  }
-  context.fillStyle = line;
-  context.fillRect(0, height - 1, width, 1);
-  context.globalAlpha = 0.5;
-  context.fillStyle = accent;
-  context.fillRect(0, height - 1, 1, height);
-  context.globalAlpha = 1;
-}
-
-function addMessage(bytes, kind) {
-  const item = document.createElement("li");
-  const time = document.createElement("time");
-  const now = new Date();
-  time.dateTime = now.toISOString();
-  time.textContent = now.toLocaleTimeString("es", {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-  });
-  const text = document.createElement("span");
-  text.className = "message-text";
-  let decoded;
-  try {
-    decoded = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-  } catch {
-    decoded = Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join(" ");
-  }
-  text.textContent = decoded.length ? decoded : "(mensaje vacío)";
-  const label = document.createElement("span");
-  label.className = "message-kind";
-  label.textContent = kind;
-  item.append(time, text, label);
-  messagesList.prepend(item);
-  while (messagesList.children.length > 25) messagesList.lastElementChild.remove();
-}
-
 function stopListening() {
   listening = false;
   if (scanTimer) {
@@ -322,18 +378,10 @@ function stopListening() {
     processorNode.disconnect();
     processorNode = null;
   }
-  if (sourceNode) {
-    sourceNode.disconnect();
-    sourceNode = null;
-  }
-  if (silentGain) {
-    silentGain.disconnect();
-    silentGain = null;
-  }
-  if (analyserNode) {
-    analyserNode.disconnect();
-    analyserNode = null;
-  }
+  for (const node of [sourceNode, silentGain, analyserNode]) if (node) node.disconnect();
+  sourceNode = null;
+  silentGain = null;
+  analyserNode = null;
   if (micStream) {
     for (const track of micStream.getTracks()) track.stop();
     micStream = null;
@@ -342,51 +390,29 @@ function stopListening() {
     micContext.close().catch(() => {});
     micContext = null;
   }
-  if (spectrumFrame) {
-    window.cancelAnimationFrame(spectrumFrame);
-    spectrumFrame = 0;
-  }
   captureRate = FS;
   resampler = null;
-  listenButton.textContent = "Escuchar";
+  clearLiveAudio();
+  listenButton.textContent = "Activar micrófono";
   listenButton.classList.remove("active");
-  clearSpectrum();
-  setStatus(receiveStatus, "Detenido.", "");
+  dotSpectrum.className = "dot dot-off";
+  idleStatus();
 }
 
 async function startListening() {
-  if (!window.isSecureContext) {
-    setStatus(
-      receiveStatus,
-      "El micrófono necesita HTTPS o localhost. Abre esta página desde un servidor local.",
-      "error"
-    );
+  if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    setRxStatus("El micrófono necesita HTTPS o localhost.", "error");
     return;
   }
-  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-    setStatus(
-      receiveStatus,
-      "Este navegador no ofrece captura de micrófono. Usa HTTPS o localhost.",
-      "error"
-    );
-    return;
-  }
-  setStatus(receiveStatus, "Solicitando permiso de micrófono…", "busy");
+  setRxStatus("Solicitando permiso de micrófono…");
   try {
     micStream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: false,
-        noiseSuppression: false,
-        autoGainControl: false,
-      },
+      audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
       video: false,
     });
   } catch (error) {
-    const reason =
-      error && error.name === "NotAllowedError"
-        ? "Permiso de micrófono denegado."
-        : "No se pudo abrir el micrófono.";
-    setStatus(receiveStatus, `${reason} Usa HTTPS o localhost y concede el permiso.`, "error");
+    const denied = error && error.name === "NotAllowedError";
+    setRxStatus(denied ? "Permiso de micrófono denegado." : "No se pudo abrir el micrófono.", "error");
     return;
   }
 
@@ -409,12 +435,12 @@ async function startListening() {
 
     analyserNode = micContext.createAnalyser();
     analyserNode.fftSize = 2048;
-    analyserNode.smoothingTimeConstant = 0.75;
+    analyserNode.smoothingTimeConstant = 0.6;
     sourceNode.connect(analyserNode);
 
     processorNode = micContext.createScriptProcessor(4096, 1, 1);
     processorNode.onaudioprocess = (event) => {
-      if (!listening) return;
+      if (!listening || transmitting) return;
       pendingAudio.push(Float32Array.from(event.inputBuffer.getChannelData(0)));
     };
     silentGain = micContext.createGain();
@@ -426,14 +452,15 @@ async function startListening() {
     clearLiveAudio();
     liveGuard = new ReplayGuard();
     listening = true;
-    listenButton.textContent = "Detener";
+    listenButton.textContent = "Apagar micrófono";
     listenButton.classList.add("active");
-    setStatus(receiveStatus, "Escuchando…", "busy");
-    drawSpectrum();
+    dotSpectrum.className = "dot dot-on";
+    idleStatus();
+    if (currentTab === "spectrum") startSpectrum();
     scanTimer = window.setTimeout(scanLoop, 200);
   } catch (error) {
     stopListening();
-    setStatus(receiveStatus, `No se pudo iniciar la escucha: ${error.message}`, "error");
+    setRxStatus(`No se pudo iniciar la escucha: ${error.message}`, "error");
   }
 }
 
@@ -453,30 +480,44 @@ listenButton.addEventListener("click", async () => {
   }
 });
 
-// Una guardia por sesion de escucha: recuerda las sesiones vistas mientras la pagina siga abierta.
-let liveGuard = new ReplayGuard();
+cancelRxButton.addEventListener("click", () => {
+  clearLiveAudio();
+  idleStatus();
+});
 
 async function scanOnce() {
-  if (pendingAudio.length === 0) return;
+  if (pendingAudio.length === 0 || transmitting) return;
   const samples = resampler.push(takePendingAudio());
-  const key = keyFrom(receiveKey);
+  const key = keyBytes();
   const guard = key !== null && replayCheck.checked ? liveGuard : null;
   const event = await liveReceiver.push(samples, key, guard);
   if (event.message !== null) {
-    addMessage(event.message, key !== null ? "decodificado · cifrado" : "decodificado · sin cifrar");
-    setStatus(receiveStatus, "Decodificado.", "ok");
+    addLogEntry({
+      direction: "Recv",
+      profileName: event.profile,
+      encrypted: key !== null,
+      text: decodeText(event.message),
+    });
   } else if (event.rejected !== null) {
     const why =
       event.rejected === "repetido"
-        ? "ya se había recibido (posible repetición)"
-        : "es antiguo o la hora de uno de los dispositivos no es correcta";
-    setStatus(receiveStatus, `Mensaje descartado: ${why}.`, "error");
+        ? "mensaje repetido (posible reenvío de una grabación)"
+        : "mensaje antiguo o con la hora de un dispositivo mal puesta";
+    addLogEntry({ direction: "Error", text: `Descartado: ${why}`, error: true });
   } else if (event.failed) {
-    setStatus(receiveStatus, "Se detectó una señal pero no se pudo decodificar. Revisa la clave o acércate.", "error");
-  } else if (event.state === "recording") {
-    setStatus(receiveStatus, "Señal detectada; recibiendo…", "busy");
-  } else if (receiveStatus.dataset.kind === "busy") {
-    setStatus(receiveStatus, "Escuchando…", "busy");
+    addLogEntry({
+      direction: "Error",
+      text: key !== null ? "Señal recibida pero no decodificada (¿misma clave?)" : "Señal recibida pero no decodificada",
+      error: true,
+    });
+  }
+  if (liveReceiver.state === "recording") {
+    const seconds = liveReceiver.buffer.length / FS;
+    setRxStatus(`Recibiendo… ${formatSeconds(seconds)} s`, "busy");
+    cancelRxButton.hidden = false;
+  } else {
+    cancelRxButton.hidden = true;
+    if (!transmitting) idleStatus();
   }
 }
 
@@ -487,13 +528,90 @@ async function scanLoop() {
     try {
       await scanOnce();
     } catch (error) {
-      if (listening) setStatus(receiveStatus, `Error al decodificar: ${error.message}`, "error");
+      if (listening) addLogEntry({ direction: "Error", text: `Error al decodificar: ${error.message}`, error: true });
     } finally {
       scanning = false;
     }
   }
   if (listening) scanTimer = window.setTimeout(scanLoop, 200);
 }
+
+// --- Espectro y cascada -----------------------------------------------------
+
+let spectrumFrame = 0;
+let waterfall = null;
+
+function startSpectrum() {
+  if (!spectrumFrame) spectrumFrame = window.requestAnimationFrame(drawSpectrum);
+}
+
+function waterfallColor(value) {
+  // De negro a verde y a amarillo, como el espectro de Waver.
+  const v = Math.min(1, value);
+  return [Math.round(255 * Math.max(0, v * 2 - 1)), Math.round(255 * Math.min(1, v * 1.6)), Math.round(40 * v)];
+}
+
+function drawSpectrum() {
+  spectrumFrame = 0;
+  if (currentTab !== "spectrum") return;
+  spectrumFrame = window.requestAnimationFrame(drawSpectrum);
+
+  const ratio = Math.min(window.devicePixelRatio || 1, 2);
+  const width = Math.max(1, Math.floor(spectrumCanvas.clientWidth * ratio));
+  const height = Math.max(1, Math.floor(spectrumCanvas.clientHeight * ratio));
+  if (spectrumCanvas.width !== width || spectrumCanvas.height !== height) {
+    spectrumCanvas.width = width;
+    spectrumCanvas.height = height;
+    waterfall = null;
+  }
+  const context = spectrumCanvas.getContext("2d");
+  const barsHeight = Math.floor(height * 0.35);
+  const fallTop = barsHeight + Math.round(6 * ratio);
+  const fallHeight = height - fallTop;
+
+  context.fillStyle = "#0b0b0b";
+  context.fillRect(0, 0, width, barsHeight);
+  if (!analyserNode) {
+    context.fillStyle = "#8f8f8f";
+    context.font = `${Math.round(14 * ratio)}px sans-serif`;
+    context.fillText("Activa el micrófono en la pestaña Mensajes", Math.round(12 * ratio), Math.round(28 * ratio));
+    return;
+  }
+
+  const bins = new Uint8Array(analyserNode.frequencyBinCount);
+  analyserNode.getByteFrequencyData(bins);
+  const maxBin = Math.min(bins.length - 1, Math.floor((8000 / (captureRate / 2)) * bins.length));
+  const columns = Math.min(width, 256);
+  const column = width / columns;
+
+  context.fillStyle = "#4fe07a";
+  const values = new Float32Array(columns);
+  for (let i = 0; i < columns; i++) {
+    const value = bins[Math.round((i / (columns - 1)) * maxBin)] / 255;
+    values[i] = value;
+    const h = Math.max(1, value * (barsHeight - 4));
+    context.fillRect(i * column, barsHeight - h, Math.max(1, column - 1), h);
+  }
+
+  // Cascada: desplaza una fila hacia abajo y pinta la nueva arriba.
+  if (fallHeight > 2) {
+    if (!waterfall || waterfall.width !== width) {
+      waterfall = context.createImageData(width, fallHeight);
+    }
+    const data = waterfall.data;
+    data.copyWithin(width * 4, 0, data.length - width * 4);
+    for (let x = 0; x < width; x++) {
+      const [r, g, b] = waterfallColor(values[Math.min(columns - 1, Math.floor(x / column))]);
+      data[x * 4] = r;
+      data[x * 4 + 1] = g;
+      data[x * 4 + 2] = b;
+      data[x * 4 + 3] = 255;
+    }
+    context.putImageData(waterfall, 0, fallTop);
+  }
+}
+
+// --- WAV y prueba sin micrófono ---------------------------------------------
 
 // Unos 17 min de audio mono a 48 kHz; evita que un archivo enorme cuelgue la pestaña.
 const MAX_WAV_BYTES = 100 * 1024 * 1024;
@@ -502,24 +620,26 @@ wavFile.addEventListener("change", async () => {
   const file = wavFile.files && wavFile.files[0];
   if (!file) return;
   if (file.size > MAX_WAV_BYTES) {
-    setStatus(receiveStatus, "WAV demasiado grande (máximo 100 MB).", "error");
+    fileStatus.textContent = "WAV demasiado grande (máximo 100 MB).";
     wavFile.value = "";
     return;
   }
-  setStatus(receiveStatus, `Leyendo ${file.name}…`, "busy");
+  fileStatus.textContent = `Leyendo ${file.name}…`;
   try {
-    const bytes = new Uint8Array(await file.arrayBuffer());
-    const signal = wavDecode(bytes);
-    const key = keyFrom(receiveKey);
-    const message = await receive(signal, key);
+    const signal = wavDecode(new Uint8Array(await file.arrayBuffer()));
+    const key = keyBytes();
+    let decodedProfile = null;
+    const message = await receive(signal, key, (status) => {
+      if (status.decoded) decodedProfile = status.profile;
+    });
     if (message !== null) {
-      addMessage(message, key !== null ? "WAV · cifrado" : "WAV · sin cifrar");
-      setStatus(receiveStatus, "WAV decodificado.", "ok");
+      addLogEntry({ direction: "Recv", profileName: decodedProfile, encrypted: key !== null, text: `${decodeText(message)} (WAV)` });
+      fileStatus.textContent = "WAV decodificado: el mensaje está en la pestaña Mensajes.";
     } else {
-      setStatus(receiveStatus, "No se pudo decodificar el WAV. Revisa la clave.", "error");
+      fileStatus.textContent = "No se pudo decodificar el WAV. Revisa la clave.";
     }
   } catch (error) {
-    setStatus(receiveStatus, `WAV no válido: ${error.message}`, "error");
+    fileStatus.textContent = `WAV no válido: ${error.message}`;
   } finally {
     wavFile.value = "";
   }
@@ -553,53 +673,39 @@ localRun.addEventListener("click", async () => {
   if (localBusy) return;
   localBusy = true;
   localRun.disabled = true;
-  setStatus(localResult, "Generando y decodificando…", "busy");
+  localResult.textContent = "Generando y decodificando…";
   try {
-    const profile = localProfile.value;
     const snr = Number(localSnr.value);
-    const message = encoder.encode(localText.value);
-    const signal = await send(message, null, profile);
+    const text = sendText.value.length ? sendText.value : "prueba local de spacewases";
+    const signal = await send(encoder.encode(text), null, profile);
     let power = 0;
     for (let i = 0; i < signal.length; i++) power += signal[i] * signal[i];
     power /= signal.length;
     const sigma = Math.sqrt(power / Math.pow(10, snr / 10));
     const noisy = new Float32Array(signal.length);
-    for (let i = 0; i < signal.length; i++) {
-      noisy[i] = signal[i] + sigma * gaussianRandom();
-    }
+    for (let i = 0; i < signal.length; i++) noisy[i] = signal[i] + sigma * gaussianRandom();
     const started = performance.now();
     const result = await receive(noisy, null);
     const elapsed = Math.round(performance.now() - started);
-    if (result !== null) {
-      const text = new TextDecoder().decode(result);
-      setStatus(localResult, `Éxito a ${snr} dB en ${elapsed} ms: “${text}”`, "ok");
-    } else {
-      setStatus(
-        localResult,
-        `Fallo a ${snr} dB en ${elapsed} ms. Prueba otro perfil o menos ruido.`,
-        "error"
-      );
-    }
+    localResult.textContent =
+      result !== null
+        ? `Éxito con ${PROFILE_LABELS[profile]} a ${snr} dB en ${elapsed} ms: «${decodeText(result)}»`
+        : `Fallo con ${PROFILE_LABELS[profile]} a ${snr} dB. Prueba otro protocolo o menos ruido.`;
   } catch (error) {
-    setStatus(localResult, `Error: ${error.message}`, "error");
+    localResult.textContent = `Error: ${error.message}`;
   } finally {
     localBusy = false;
     localRun.disabled = false;
   }
 });
 
-updateDuration();
-snrValue.textContent = `${localSnr.value} dB`;
+// --- Inicio -----------------------------------------------------------------
+
+showTab("messages");
+updateComposer();
+idleStatus();
 
 if (!globalThis.crypto || !globalThis.crypto.subtle) {
-  setStatus(
-    sendStatus,
-    "Este navegador no expone crypto.subtle. Abre la página por HTTPS o localhost.",
-    "error"
-  );
-  setStatus(
-    localResult,
-    "La prueba local necesita crypto.subtle: usa HTTPS o localhost.",
-    "error"
-  );
+  setRxStatus("Este navegador no expone crypto.subtle: abre la página por HTTPS.", "error");
+  emitButton.disabled = true;
 }

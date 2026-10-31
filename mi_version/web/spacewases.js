@@ -1001,7 +1001,10 @@ export async function receive(signal, key = null, onStatus = null, guard = null)
     for (const offset of ALIGN_OFFSETS) {
       const raw = demodulateSynced(sync, FRAMES[name], offset);
       const result = await decodeStream(raw, key, [PROFILES[name]], guard);
-      if (result !== null) return result;
+      if (result !== null) {
+        if (onStatus) onStatus({ decoded: true, profile: name });
+        return result;
+      }
       if (guard !== null && guard.lastReason !== null) return null;
     }
   }
@@ -1037,11 +1040,12 @@ export class StreamReceiver {
     if (this.buffer.length > length) this.buffer = this.buffer.slice(this.buffer.length - length);
   }
 
-  // Recibe muestras a FS y devuelve { state, message, rejected, failed }. message es el
-  // mensaje decodificado (o null); rejected, el motivo de ReplayGuard si lo descarto;
+  // Recibe muestras a FS y devuelve { state, message, profile, rejected, failed }. message
+  // es el mensaje decodificado (o null) y profile, el perfil con que se decodifico;
+  // rejected, el motivo de ReplayGuard si lo descarto;
   // failed, true si una grabacion completa no se pudo decodificar.
   async push(samples, key = null, guard = null) {
-    const event = { state: this.state, message: null, rejected: null, failed: false };
+    const event = { state: this.state, message: null, profile: null, rejected: null, failed: false };
     this.append(samples instanceof Float32Array ? samples : Float32Array.from(samples));
 
     if (this.state === "idle") {
@@ -1073,7 +1077,10 @@ export class StreamReceiver {
     if (!endComplete && !tooLong) return event;
 
     const cut = endComplete ? Math.min(this.buffer.length, from + end.index + CHIRP_LEN + SYMBOL) : this.buffer.length;
-    const message = await receive(this.buffer.subarray(0, cut), key, null, guard);
+    const onStatus = (status) => {
+      if (status.decoded) event.profile = status.profile;
+    };
+    const message = await receive(this.buffer.subarray(0, cut), key, onStatus, guard);
     event.message = message;
     if (message === null) {
       if (guard !== null && guard.lastReason !== null) event.rejected = guard.lastReason;

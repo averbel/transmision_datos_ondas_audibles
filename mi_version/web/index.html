@@ -2,127 +2,113 @@
 <html lang="es">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'">
-  <meta name="description" content="SpaceWases: módem acústico para transmitir texto por sonido con el altavoz y el micrófono.">
-  <title>SpaceWases · módem acústico</title>
-  <link rel="stylesheet" href="style.css?v=20261031">
+  <meta name="description" content="SpaceWases: envía y recibe texto por sonido entre dispositivos cercanos, con el altavoz y el micrófono.">
+  <meta name="theme-color" content="#141414">
+  <title>SpaceWases</title>
+  <link rel="stylesheet" href="style.css?v=20261031b">
 </head>
 <body>
-  <header class="site-header">
-    <div class="wrap header-inner">
-      <div>
-        <p class="eyebrow">Módem acústico</p>
-        <h1>SpaceWases</h1>
-        <p class="lede">Texto convertido en tonos audibles. Un altavoz emite, un micrófono escucha y la trama se reconstruye con Reed-Solomon.</p>
-      </div>
-      <p class="header-note">48 kHz · MFSK · RS(255)</p>
-    </div>
-  </header>
+  <div class="app">
+    <nav class="tabs" role="tablist" aria-label="Secciones">
+      <button id="tab-settings" class="tab tab-icon" type="button" role="tab" aria-controls="view-settings" aria-selected="false" aria-label="Ajustes" title="Ajustes">⚙</button>
+      <button id="tab-messages" class="tab" type="button" role="tab" aria-controls="view-messages" aria-selected="true">
+        <span id="dot-messages" class="dot dot-new" hidden></span>Mensajes
+      </button>
+      <button id="tab-spectrum" class="tab" type="button" role="tab" aria-controls="view-spectrum" aria-selected="false">
+        <span id="dot-spectrum" class="dot dot-off" aria-hidden="true"></span>Espectro
+      </button>
+    </nav>
 
-  <main class="wrap layout">
-    <section class="panel panel-send" aria-labelledby="send-title">
-      <h2 id="send-title">Enviar</h2>
-      <p class="panel-note">Escribe el mensaje, elige un perfil y emite la señal. También puedes guardarla como WAV.</p>
+    <section id="view-messages" class="view view-messages" role="tabpanel" aria-labelledby="tab-messages">
+      <ol id="messages" class="log" aria-live="polite" aria-label="Historial de mensajes">
+        <li class="log-hint">Abre esta página en dos dispositivos cercanos. En el que recibe, activa el micrófono; en el otro, escribe y pulsa Enviar.</li>
+      </ol>
 
-      <label for="send-text">Mensaje</label>
-      <textarea id="send-text" rows="5" maxlength="2000">hola spacewases</textarea>
-
-      <div class="field-row">
-        <div class="field">
-          <label for="send-profile">Perfil</label>
-          <select id="send-profile" aria-describedby="profile-hint"></select>
-          <p id="profile-hint" class="meta">Robusto tarda más pero aguanta mejor el ruido y el eco de la sala; Normal y Rápido son más cortos.</p>
-        </div>
-        <div class="field">
-          <label for="send-key">Clave (opcional)</label>
-          <input id="send-key" type="password" autocomplete="off" spellcheck="false" aria-describedby="key-hint">
-        </div>
-      </div>
-      <p id="key-hint" class="meta">Con clave el mensaje se cifra y se autentica. Usa una frase larga: una clave corta se puede adivinar por fuerza bruta. La clave no sale de tu navegador.</p>
-
-      <div class="field-row">
-        <div class="field">
-          <label for="send-repeat">Repeticiones</label>
-          <select id="send-repeat">
-            <option value="1">1 vez</option>
-            <option value="2">2 veces (tolera un bloque dañado)</option>
-            <option value="3">3 veces</option>
-          </select>
-        </div>
+      <div class="statusline">
+        <span id="rx-status" class="rx-status" role="status">Micrófono apagado</span>
+        <progress id="tx-progress" class="tx-progress" max="1" value="0" hidden></progress>
+        <button id="cancel-rx" type="button" class="small" hidden>Detener</button>
+        <button id="listen" type="button" class="small">Activar micrófono</button>
       </div>
 
-      <div class="actions">
-        <button id="emit" type="button" class="primary">Emitir</button>
-        <button id="download" type="button">Descargar WAV</button>
-      </div>
-      <p id="send-status" class="status" role="status" aria-live="polite"></p>
-      <p id="duration" class="meta"></p>
+      <form id="send-form" class="composer" autocomplete="off">
+        <label for="send-text" class="visually-hidden">Mensaje</label>
+        <input id="send-text" type="text" maxlength="2000" enterkeyhint="send" spellcheck="true">
+        <button id="emit" type="submit" class="primary">Enviar</button>
+      </form>
+      <p id="duration" class="duration" aria-live="off"></p>
     </section>
 
-    <section class="panel panel-receive" aria-labelledby="receive-title">
-      <h2 id="receive-title">Recibir</h2>
-      <p class="panel-note">Escucha con el micrófono o abre un WAV. La clave debe coincidir con la usada al emitir. Por aire funciona mejor con los dispositivos a 1–2 m y el volumen del emisor alto pero sin distorsionar.</p>
-
-      <label for="receive-key">Clave (opcional)</label>
-      <input id="receive-key" type="password" autocomplete="off" spellcheck="false">
-
-      <label class="check" for="replay-guard">
-        <input id="replay-guard" type="checkbox" checked>
-        Rechazar mensajes con clave repetidos o antiguos al escuchar
-      </label>
-      <p class="meta">Evita que alguien grabe un mensaje y lo reproduzca después. Exige que el reloj de ambos dispositivos esté en hora (tolerancia de 2 minutos). No se aplica a los WAV cargados.</p>
-
-      <div class="actions">
-        <button id="listen" type="button" class="primary">Escuchar</button>
-      </div>
-      <p id="receive-status" class="status" role="status" aria-live="polite">Listo para escuchar.</p>
-
-      <canvas id="spectrum" role="img" aria-label="Espectro de audio en vivo"></canvas>
-
-      <div class="file-row">
-        <label for="wav-file">Cargar WAV para decodificar</label>
-        <input id="wav-file" type="file" accept=".wav,audio/wav,audio/x-wav">
-      </div>
-
-      <ol id="messages" class="messages" aria-live="polite" aria-label="Mensajes recibidos"></ol>
+    <section id="view-spectrum" class="view view-spectrum" role="tabpanel" aria-labelledby="tab-spectrum" hidden>
+      <canvas id="spectrum" role="img" aria-label="Espectro y cascada del audio del micrófono"></canvas>
+      <p class="muted">Arriba, el espectro actual hasta 8 kHz; abajo, la cascada de los últimos segundos. Los tonos de SpaceWases van de 1,9 a 6,2 kHz.</p>
     </section>
 
-    <section class="panel panel-local" aria-labelledby="local-title">
-      <div class="local-copy">
-        <h2 id="local-title">Prueba local</h2>
-        <p class="panel-note">Sin micrófono: genera la señal, le suma ruido gaussiano y la decodifica en esta misma página. Sirve para comparar perfiles y niveles de ruido.</p>
+    <section id="view-settings" class="view view-settings" role="tabpanel" aria-labelledby="tab-settings" hidden>
+      <h1>SpaceWases</h1>
+      <p class="muted">Texto por sonido entre dispositivos cercanos: MFSK a 48 kHz con Reed-Solomon.</p>
+
+      <div class="setting">
+        <label for="volume">Volumen: <output id="volume-value" for="volume">100 %</output></label>
+        <input id="volume" type="range" min="5" max="100" step="5" value="100">
       </div>
 
-      <div class="local-form">
-        <label for="local-text">Mensaje de prueba</label>
-        <textarea id="local-text" rows="2" maxlength="2000">prueba local de spacewases</textarea>
+      <fieldset class="setting">
+        <legend>Protocolo de envío</legend>
+        <div id="protocols" class="protocols"></div>
+        <p class="muted">Robusto aguanta mejor el ruido y el eco de la sala; Normal y Rápido son más cortos. El receptor reconoce los tres solo.</p>
+      </fieldset>
 
-        <div class="field-row">
-          <div class="field">
-            <label for="local-profile">Perfil</label>
-            <select id="local-profile"></select>
-          </div>
-          <div class="field">
-            <label for="local-snr">SNR: <output id="snr-value" for="local-snr">0 dB</output></label>
-            <input id="local-snr" type="range" min="-12" max="12" step="1" value="0">
-          </div>
-        </div>
-
-        <div class="actions">
-          <button id="local-run" type="button" class="primary">Probar localmente</button>
-        </div>
-        <p id="local-result" class="status" role="status" aria-live="polite"></p>
+      <div class="setting">
+        <label for="send-repeat">Repeticiones</label>
+        <select id="send-repeat">
+          <option value="1">1 vez</option>
+          <option value="2">2 veces (tolera un bloque dañado)</option>
+          <option value="3">3 veces</option>
+        </select>
       </div>
+
+      <div class="setting">
+        <label for="key">Clave compartida (opcional)</label>
+        <input id="key" type="password" autocomplete="off" spellcheck="false" aria-describedby="key-hint">
+        <p id="key-hint" class="muted">Con clave los mensajes se cifran y se autentican, y solo se reciben los cifrados con la misma clave. Usa una frase larga. La clave no sale de tu navegador.</p>
+        <label class="check" for="replay-guard">
+          <input id="replay-guard" type="checkbox" checked>
+          Rechazar mensajes con clave repetidos o antiguos (los relojes deben estar en hora, tolerancia de 2 min)
+        </label>
+      </div>
+
+      <div class="setting">
+        <span class="label">Archivos WAV</span>
+        <div class="row">
+          <button id="download" type="button">Guardar el mensaje escrito como WAV</button>
+          <label class="button" for="wav-file">Decodificar un WAV</label>
+          <input id="wav-file" class="visually-hidden" type="file" accept=".wav,audio/wav,audio/x-wav">
+        </div>
+        <p id="file-status" class="muted" role="status"></p>
+      </div>
+
+      <details class="setting">
+        <summary>Prueba sin micrófono</summary>
+        <p class="muted">Genera la señal, le suma ruido gaussiano y la decodifica en esta página.</p>
+        <label for="local-snr">SNR: <output id="snr-value" for="local-snr">0 dB</output></label>
+        <input id="local-snr" type="range" min="-12" max="12" step="1" value="0">
+        <div class="row">
+          <button id="local-run" type="button">Probar con el mensaje escrito</button>
+        </div>
+        <p id="local-result" class="muted" role="status"></p>
+      </details>
+
+      <footer class="credits">
+        <p>Andrés Felipe Verbel Pacheco (CUC) · licencia MIT. Diseño tomado como referencia de <a href="https://github.com/ggerganov/ggwave">ggwave</a> y Waver (MIT, © 2020 Georgi Gerganov); el código es propio.</p>
+        <p>Sin clave el mensaje viaja en claro y cualquiera puede fabricar mensajes. Con clave se cifra y se autentica, pero la construcción no ha sido auditada por terceros: no la uses para información sensible. Cualquier micrófono cercano recibe la señal.</p>
+        <p>Probado por aire en un solo portátil y una sala (157 de 180 mensajes recibidos).</p>
+      </footer>
     </section>
-  </main>
+  </div>
 
-  <footer class="wrap site-footer">
-    <p><strong>SpaceWases</strong> · Andrés Felipe Verbel Pacheco (CUC) · Diseño tomado como referencia de <a href="https://github.com/ggerganov/ggwave">ggwave</a> (MIT, © 2020 Georgi Gerganov); el código es propio y se publica con licencia MIT.</p>
-    <p>Sin clave el mensaje viaja en claro y cualquiera puede fabricar tramas válidas. Con clave se cifra y se autentica, pero la construcción es propia y no ha sido auditada: no la uses para información sensible. Cualquier micrófono cercano recibe la señal.</p>
-    <p>Probado por aire en un solo portátil y una sala (157 de 180 mensajes recibidos); falta probarlo en otros dispositivos.</p>
-  </footer>
-
-  <script type="module" src="app.js?v=20261031"></script>
+  <script type="module" src="app.js?v=20261031b"></script>
 </body>
 </html>

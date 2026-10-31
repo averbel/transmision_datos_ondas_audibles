@@ -92,8 +92,8 @@ await check("dos mensajes seguidos con perfiles distintos", async () => {
   const b = await send(enc.encode("segundo"), null, "robust");
   const audio = concat([noise(1, 0.01, rng), a, noise(1.5, 0.01, rng), b, noise(1, 0.01, rng)]);
   const events = await stream(new StreamReceiver(), audio, rng);
-  const texts = events.map((e) => (e.message ? dec.decode(e.message) : null));
-  return JSON.stringify(texts) === JSON.stringify(["primero", "segundo"]) || JSON.stringify(texts);
+  const texts = events.map((e) => (e.message ? `${dec.decode(e.message)}/${e.profile}` : null));
+  return JSON.stringify(texts) === JSON.stringify(["primero/fast", "segundo/robust"]) || JSON.stringify(texts);
 });
 
 await check("mensaje de más de 32 s (antes no cabía en la ventana)", async () => {

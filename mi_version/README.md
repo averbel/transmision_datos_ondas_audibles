@@ -13,7 +13,7 @@ Módem acústico propio en Python (solo `numpy` y la biblioteca estándar) para 
 
 ## Web
 
-`web/` es una página estática (sin dependencias ni compilación): envía y recibe con altavoz y micrófono, muestra el espectro y trae una prueba local con ruido ajustable. `web/spacewases.js` es un port exacto del Python; se comprobó que cada lado decodifica lo que emite el otro.
+`web/` es una página estática (sin dependencias ni compilación) con la disposición de Waver, la app de ggwave: pestañas Ajustes, Mensajes y Espectro; un historial con líneas `hora | Recv/Send | protocolo | texto`; una línea de estado (escuchando, recibiendo, enviando con barra de progreso), y la caja de envío abajo. Ajustes reúne el volumen, el protocolo, las repeticiones, la clave, los WAV y una prueba sin micrófono. El espectro muestra la cascada del micrófono. `web/spacewases.js` es un port exacto del Python; se comprobó que cada lado decodifica lo que emite el otro.
 
 ```bash
 cd web
