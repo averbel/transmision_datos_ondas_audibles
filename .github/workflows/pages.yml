@@ -37,7 +37,7 @@ jobs:
       - name: Copiar solo los archivos de la web
         run: |
           mkdir _site
-          cp mi_version/web/index.html mi_version/web/app.js mi_version/web/spacewases.js mi_version/web/style.css _site/
+          cp mi_version/web/index.html mi_version/web/app.js mi_version/web/spacewases.js mi_version/web/style.css mi_version/web/captura.js _site/
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

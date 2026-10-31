@@ -10,7 +10,7 @@ import {
   signalSeconds,
   StreamReceiver,
   Resampler,
-} from "./spacewases.js?v=20261031d";
+} from "./spacewases.js?v=20261031e";
 
 const PROFILE_LABELS = {
   robust: "Robusto",
@@ -374,7 +374,8 @@ function stopListening() {
     scanTimer = 0;
   }
   if (processorNode) {
-    processorNode.onaudioprocess = null;
+    if (processorNode.port) processorNode.port.onmessage = null;
+    else processorNode.onaudioprocess = null;
     processorNode.disconnect();
     processorNode = null;
   }
@@ -438,11 +439,24 @@ async function startListening() {
     analyserNode.smoothingTimeConstant = 0.6;
     sourceNode.connect(analyserNode);
 
-    processorNode = micContext.createScriptProcessor(4096, 1, 1);
-    processorNode.onaudioprocess = (event) => {
-      if (!listening || transmitting) return;
-      pendingAudio.push(Float32Array.from(event.inputBuffer.getChannelData(0)));
+    const onAudio = (samples) => {
+      if (listening && !transmitting) pendingAudio.push(samples);
     };
+    // AudioWorklet captura en el hilo de audio y no pierde muestras si la página está
+    // ocupada; ScriptProcessor queda para navegadores sin AudioWorklet.
+    if (micContext.audioWorklet && window.AudioWorkletNode) {
+      try {
+        await micContext.audioWorklet.addModule("captura.js?v=20261031e");
+        processorNode = new AudioWorkletNode(micContext, "captura", { outputChannelCount: [1] });
+        processorNode.port.onmessage = (event) => onAudio(event.data);
+      } catch {
+        processorNode = null;
+      }
+    }
+    if (!processorNode) {
+      processorNode = micContext.createScriptProcessor(4096, 1, 1);
+      processorNode.onaudioprocess = (event) => onAudio(Float32Array.from(event.inputBuffer.getChannelData(0)));
+    }
     silentGain = micContext.createGain();
     silentGain.gain.value = 0;
     sourceNode.connect(processorNode);
