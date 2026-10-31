@@ -10,7 +10,7 @@ import {
   signalSeconds,
   StreamReceiver,
   Resampler,
-} from "./spacewases.js?v=20261031b";
+} from "./spacewases.js?v=20261031c";
 
 const PROFILE_LABELS = {
   robust: "Robusto",
@@ -491,25 +491,30 @@ async function scanOnce() {
   const key = keyBytes();
   const guard = key !== null && replayCheck.checked ? liveGuard : null;
   const event = await liveReceiver.push(samples, key, guard);
-  if (event.message !== null) {
-    addLogEntry({
-      direction: "Recv",
-      profileName: event.profile,
-      encrypted: key !== null,
-      text: decodeText(event.message),
-    });
-  } else if (event.rejected !== null) {
-    const why =
-      event.rejected === "repetido"
-        ? "mensaje repetido (posible reenvío de una grabación)"
-        : "mensaje antiguo o con la hora de un dispositivo mal puesta";
-    addLogEntry({ direction: "Error", text: `Descartado: ${why}`, error: true });
-  } else if (event.failed) {
-    addLogEntry({
-      direction: "Error",
-      text: key !== null ? "Señal recibida pero no decodificada (¿misma clave?)" : "Señal recibida pero no decodificada",
-      error: true,
-    });
+  for (const result of event.results) {
+    if (result.message !== null) {
+      addLogEntry({
+        direction: "Recv",
+        profileName: result.profile,
+        encrypted: key !== null,
+        text: decodeText(result.message),
+      });
+    } else if (result.rejected !== null) {
+      const why =
+        result.rejected === "repetido"
+          ? "mensaje repetido (posible reenvío de una grabación)"
+          : "mensaje antiguo o con la hora de un dispositivo mal puesta";
+      addLogEntry({ direction: "Error", text: `Descartado: ${why}`, error: true });
+    } else if (result.failed) {
+      addLogEntry({
+        direction: "Error",
+        text:
+          key !== null
+            ? "Señal recibida pero no decodificada (¿misma clave? prueba Robusto o acerca los equipos)"
+            : "Señal recibida pero no decodificada (prueba Robusto, más volumen o acerca los equipos)",
+        error: true,
+      });
+    }
   }
   if (liveReceiver.state === "recording") {
     const seconds = liveReceiver.buffer.length / FS;

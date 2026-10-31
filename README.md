@@ -4,12 +4,15 @@ Investigación (Universidad de la Costa, CUC) sobre comunicación de datos por s
 fundamentos del canal acústico, estado del arte con cifras publicadas y un estudio de caso del sistema
 abierto [ggwave](https://github.com/ggerganov/ggwave).
 
+**Web en uso:** https://spacewases.vercel.app — envía y recibe texto por sonido entre dos dispositivos cercanos, con una interfaz al estilo de Waver (la app de ggwave). Ábrela en los dos, activa el micrófono en el que recibe y escribe en el otro.
+
 ## Contenido
 
 | Carpeta | Qué hay |
 |---|---|
 | `paper/` | Artículo en formato IEEE de dos columnas: `Articulo_IEEE_Transmision_ondas_audibles.pdf`, su fuente `articulo.html`, las figuras y `make_figures.py`. |
-| `mi_version/` | **spacewases**, módem acústico propio en Python con pruebas y benchmark. Ver `mi_version/README.md`. |
+| `mi_version/` | **SpaceWases**, módem acústico propio en Python con pruebas, benchmark y diagnóstico por aire. Ver `mi_version/README.md`. |
+| `mi_version/web/` | La web publicada: port exacto del módem a JavaScript, sin dependencias, con sus pruebas en `web/test/`. |
 | `experimentos/ggwave_bench/` | Banco de pruebas en C++ (canal con ruido blanco gaussiano simulado) y resultados en CSV. |
 | `experimentos/prueba_acustica/` | Herramientas para la prueba real altavoz→micrófono (`enc.cpp`, `dec.cpp`, `air.py`). **Pendiente**: las series completas se descartaron por condiciones no controladas. |
 
@@ -41,8 +44,9 @@ msedge --headless=new --no-pdf-header-footer \
 
 - Revisión de literatura y análisis de ggwave: hecho.
 - Mediciones con ruido simulado: hechas (`results2.csv`).
-- Prueba acústica real con volumen y distancia controlados: pendiente.
-- Versión propia del sistema (`mi_version/`): hecha y probada con ruido simulado; faltan la prueba real por aire, la protección contra repetición y la recuperación por fragmento.
+- Prueba acústica de ggwave con volumen y distancia controlados: pendiente.
+- Versión propia (`mi_version/`): hecha. Con ruido simulado decodifica el 100 % desde −12 dB; por aire, en un portátil y una sala, 157 de 180 mensajes. Tiene cifrado opcional con clave, protección contra repetición y recuperación por fragmento.
+- Web: publicada en Vercel con la interfaz al estilo Waver. Probada por el autor entre dos dispositivos: a veces no recibía mensajes; se corrigió una causa (ver `CONTINUAR.md`, punto 9) y falta repetir esa prueba.
 
 ## Atribución y licencia
 

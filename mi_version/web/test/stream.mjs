@@ -58,7 +58,7 @@ async function stream(receiver, signal, rng, key = null, guard = null) {
   while (offset < signal.length) {
     const size = 1024 + Math.floor(rng() * 7168);
     const ev = await receiver.push(signal.subarray(offset, offset + size), key, guard);
-    if (ev.message !== null || ev.rejected !== null || ev.failed) events.push(ev);
+    events.push(...ev.results);
     offset += size;
   }
   return events;
@@ -132,6 +132,34 @@ await check("señal cortada sin chirp final: falla al llegar al tope y vuelve a 
   const audio = concat([noise(1, 0.01, rng), truncated, noise(6, 0.01, rng)]);
   const events = await stream(receiver, audio, rng);
   return (events.length === 1 && events[0].failed && receiver.state === "idle") || `eventos: ${events.length}`;
+});
+
+await check("trozos grandes (0,5 a 4 s, hilo ocupado): no se pierde ningún mensaje", async () => {
+  const rng = makeRng(9);
+  const a = await send(enc.encode("primero"), null, "fast");
+  const b = await send(enc.encode("segundo"), null, "fast");
+  const audio = concat([noise(1.3, 0.01, rng), a, noise(1, 0.01, rng), b, noise(3, 0.01, rng)]);
+  for (const seconds of [0.5, 1, 2, 4]) {
+    const receiver = new StreamReceiver();
+    const step = Math.round(seconds * FS);
+    const texts = [];
+    for (let off = 0; off < audio.length; off += step) {
+      const ev = await receiver.push(audio.subarray(off, off + step));
+      for (const r of ev.results) texts.push(r.message ? dec.decode(r.message) : "fallo");
+    }
+    if (JSON.stringify(texts) !== JSON.stringify(["primero", "segundo"])) return `${seconds} s: ${JSON.stringify(texts)}`;
+  }
+  return true;
+});
+
+await check("dos mensajes en un mismo trozo: salen los dos, en orden", async () => {
+  const rng = makeRng(10);
+  const a = await send(enc.encode("uno"), null, "fast");
+  const b = await send(enc.encode("dos"), null, "normal");
+  const audio = concat([noise(0.5, 0.01, rng), a, noise(0.5, 0.01, rng), b, noise(0.5, 0.01, rng)]);
+  const ev = await new StreamReceiver().push(audio);
+  const texts = ev.results.map((r) => (r.message ? `${dec.decode(r.message)}/${r.profile}` : "fallo"));
+  return JSON.stringify(texts) === JSON.stringify(["uno/fast", "dos/normal"]) || JSON.stringify(texts);
 });
 
 // Remuestreo lineal de una sola vez, como "microfono" a otra frecuencia en las pruebas.

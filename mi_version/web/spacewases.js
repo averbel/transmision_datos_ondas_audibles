@@ -1011,13 +1011,29 @@ export async function receive(signal, key = null, onStatus = null, guard = null)
   return null;
 }
 
-// Receptor en flujo, con la idea de ggwave: en reposo busca el chirp de inicio en
-// ventanas cortas; al encontrarlo graba hasta ver el chirp de fin (o hasta maxSeconds)
-// y entonces hace un unico intento de decodificar antes de volver a reposo.
+// Primer chirp (directo o invertido) de signal a partir de from, buscado en ventanas
+// de window muestras que se solapan un chirp, como si el audio llegara en trozos
+// pequenos. Asi, en un tramo largo con varios mensajes, se encuentra el primero y no
+// el que mas correlaciona. Devuelve el indice absoluto o null.
+function firstChirp(signal, from, reverse, window) {
+  for (let start = from; start + CHIRP_LEN <= signal.length; start += window - CHIRP_LEN) {
+    const segment = signal.subarray(start, Math.min(signal.length, start + window));
+    const found = findChirpInternal(toFloat64Array(segment), reverse);
+    if (found && found.score >= SYNC_THRESHOLD) return start + found.index;
+    if (start + window >= signal.length) break;
+  }
+  return null;
+}
+
+// Receptor en flujo, con la idea de ggwave: en reposo busca el chirp de inicio; al
+// encontrarlo graba hasta ver el chirp de fin (o hasta maxSeconds) y entonces hace un
+// unico intento de decodificar antes de volver a reposo. Los trozos pueden ser de
+// cualquier tamano (en el navegador crecen si el hilo esta ocupado o la pestana en
+// segundo plano): todo el audio nuevo se revisa y caben varios mensajes en un trozo.
 export class StreamReceiver {
   constructor({ maxSeconds = 90, hop = 4096, endCheckEvery = 16384 } = {}) {
     this.maxSamples = Math.round(maxSeconds * FS);
-    this.hop = hop;
+    this.window = 2 * CHIRP_LEN + hop;
     this.endCheckEvery = endCheckEvery;
     this.reset();
   }
@@ -1026,7 +1042,7 @@ export class StreamReceiver {
     this.state = "idle";
     this.buffer = new Float32Array(0);
     this.endSearchFrom = 0;
-    this.sinceEndCheck = 0;
+    this.checkedUpTo = 0;
   }
 
   append(samples) {
@@ -1040,56 +1056,57 @@ export class StreamReceiver {
     if (this.buffer.length > length) this.buffer = this.buffer.slice(this.buffer.length - length);
   }
 
-  // Recibe muestras a FS y devuelve { state, message, profile, rejected, failed }. message
-  // es el mensaje decodificado (o null) y profile, el perfil con que se decodifico;
-  // rejected, el motivo de ReplayGuard si lo descarto;
-  // failed, true si una grabacion completa no se pudo decodificar.
+  // Recibe muestras a FS y devuelve { state, results, message, profile, rejected, failed }.
+  // results tiene un resultado { message, profile, rejected, failed } por cada grabacion
+  // terminada en este trozo; los demas campos repiten el primero (o valen null/false):
+  // message es el mensaje decodificado y profile, el perfil con que se decodifico;
+  // rejected, el motivo de ReplayGuard si lo descarto; failed, true si una grabacion
+  // completa no se pudo decodificar.
   async push(samples, key = null, guard = null) {
-    const event = { state: this.state, message: null, profile: null, rejected: null, failed: false };
     this.append(samples instanceof Float32Array ? samples : Float32Array.from(samples));
+    const results = [];
 
-    if (this.state === "idle") {
-      // Ventana corta: lo justo para contener un chirp completo y el salto actual.
-      this.keepTail(2 * CHIRP_LEN + this.hop);
-      if (this.buffer.length < CHIRP_LEN) return event;
-      const found = findChirpInternal(toFloat64Array(this.buffer), false);
-      if (!found || found.score < SYNC_THRESHOLD || found.index + CHIRP_LEN > this.buffer.length) {
-        return event;
+    for (;;) {
+      if (this.state === "idle") {
+        const start = this.buffer.length >= CHIRP_LEN ? firstChirp(this.buffer, 0, false, this.window) : null;
+        if (start === null) {
+          // Se guarda lo justo para no partir un chirp que siga en el proximo trozo.
+          this.keepTail(2 * CHIRP_LEN);
+          break;
+        }
+        this.buffer = this.buffer.slice(Math.max(0, start - SYMBOL));
+        this.state = "recording";
+        this.endSearchFrom = CHIRP_LEN + GUARD;
+        this.checkedUpTo = this.endSearchFrom;
       }
-      this.buffer = this.buffer.slice(Math.max(0, found.index - SYMBOL));
-      this.state = "recording";
-      this.endSearchFrom = CHIRP_LEN + GUARD;
-      this.sinceEndCheck = 0;
-      event.state = this.state;
-      return event;
+
+      const tooLong = this.buffer.length >= this.maxSamples;
+      if (this.buffer.length - this.checkedUpTo < this.endCheckEvery && !tooLong) break;
+
+      // Busca el chirp final solo en el audio nuevo (con un chirp de solape).
+      const from = Math.max(this.endSearchFrom, this.checkedUpTo - CHIRP_LEN);
+      const limit = Math.min(this.buffer.length, this.maxSamples);
+      const end = firstChirp(this.buffer.subarray(0, limit), from, true, this.window);
+      this.checkedUpTo = this.buffer.length;
+      if (end === null && !tooLong) break;
+
+      const cut = end !== null ? Math.min(this.buffer.length, end + CHIRP_LEN + SYMBOL) : limit;
+      const result = { message: null, profile: null, rejected: null, failed: false };
+      const onStatus = (status) => {
+        if (status.decoded) result.profile = status.profile;
+      };
+      result.message = await receive(this.buffer.subarray(0, cut), key, onStatus, guard);
+      if (result.message === null) {
+        if (guard !== null && guard.lastReason !== null) result.rejected = guard.lastReason;
+        else result.failed = true;
+      }
+      results.push(result);
+      this.buffer = this.buffer.slice(cut);
+      this.state = "idle";
     }
 
-    this.sinceEndCheck += samples.length;
-    const tooLong = this.buffer.length >= this.maxSamples;
-    if (this.sinceEndCheck < this.endCheckEvery && !tooLong) return event;
-    this.sinceEndCheck = 0;
-
-    // Busca el chirp final solo en la cola reciente (no en toda la grabacion).
-    const from = Math.max(this.endSearchFrom, this.buffer.length - (2 * CHIRP_LEN + this.endCheckEvery));
-    const tail = this.buffer.subarray(from);
-    const end = tail.length >= CHIRP_LEN ? findChirpInternal(toFloat64Array(tail), true) : null;
-    const endComplete = end && end.score >= SYNC_THRESHOLD && end.index + CHIRP_LEN <= tail.length;
-    if (!endComplete && !tooLong) return event;
-
-    const cut = endComplete ? Math.min(this.buffer.length, from + end.index + CHIRP_LEN + SYMBOL) : this.buffer.length;
-    const onStatus = (status) => {
-      if (status.decoded) event.profile = status.profile;
-    };
-    const message = await receive(this.buffer.subarray(0, cut), key, onStatus, guard);
-    event.message = message;
-    if (message === null) {
-      if (guard !== null && guard.lastReason !== null) event.rejected = guard.lastReason;
-      else event.failed = true;
-    }
-    this.buffer = this.buffer.slice(cut);
-    this.state = "idle";
-    event.state = this.state;
-    return event;
+    const first = results[0] || { message: null, profile: null, rejected: null, failed: false };
+    return { state: this.state, results, ...first };
   }
 }
 

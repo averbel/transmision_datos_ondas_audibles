@@ -19,7 +19,7 @@ Módem acústico propio en Python (solo `numpy` y la biblioteca estándar) para 
 cd web
 python -m http.server 8790
 node test/roundtrip.mjs   # 51 pruebas, incluye WAV generados por Python
-node test/stream.mjs      # 8 pruebas del receptor en flujo y del remuestreo
+node test/stream.mjs      # 10 pruebas del receptor en flujo y del remuestreo
 ```
 
 Abre `http://localhost:8790`. El micrófono solo funciona en `localhost` o `https`.
