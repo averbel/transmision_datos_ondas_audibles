@@ -18,3 +18,4 @@ Scripts que se usaron para investigar por qué `prueba_aire.py` falla (9 de 180 
 | `air_integrate.py` | Símbolos de 1, 2, 3 y 6 tramas con suma de tramas descartando la primera, como hace ggwave |
 
 Resultados y conclusiones: ver el punto 0 de `CONTINUAR.md` en la raíz del repositorio.
+| `air_div_frames.py` | Diversidad combinada con símbolos de 1, 2 y 3 tramas, sin DFE |
