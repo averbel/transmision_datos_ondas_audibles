@@ -374,6 +374,10 @@ output {
   color: var(--ink);
 }
 
+.site-footer a {
+  color: var(--accent);
+}
+
 @media (max-width: 860px) {
   .layout,
   .panel-local {
