@@ -48,4 +48,4 @@ msedge --headless=new --no-pdf-header-footer \
 
 El análisis se basa en ggwave de Georgi Gerganov (MIT). Las referencias completas están en el artículo.
 Autor: Andrés Felipe Verbel Pacheco (CUC).
-No se ha elegido aún una licencia para este material propio.
+El material propio se publica con licencia MIT (ver `LICENSE`). La licencia de ggwave es la suya y no cambia.

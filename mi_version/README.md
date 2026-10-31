@@ -28,7 +28,7 @@ Abre `http://localhost:8790`. El micrófono solo funciona en `localhost` o `http
 
 El flujo `.github/workflows/pages.yml` corre las pruebas JS y publica solo `index.html`, `app.js`, `spacewases.js` y `style.css`. Pages sirve con https, que el micrófono necesita. No se ejecuta solo: hay que lanzarlo a mano.
 
-1. Decidir antes la licencia y la visibilidad: la página publicada es pública aunque el repositorio sea privado, y Pages en un repositorio privado requiere un plan de pago de GitHub.
+1. Decidir antes la visibilidad (la licencia es MIT, `LICENSE` en la raíz): la página publicada es pública aunque el repositorio sea privado, y Pages en un repositorio privado requiere un plan de pago de GitHub.
 2. En GitHub: *Settings → Pages → Build and deployment → Source: GitHub Actions*.
 3. En cada publicación, cambiar la versión `?v=AAAAMMDD` en `web/index.html` (dos veces) y en la importación de `web/app.js`, para que nadie se quede con un JS viejo en caché; correr las pruebas de Python y JS; hacer push.
 4. *Actions → Publicar web → Run workflow*. La dirección queda en el resumen del trabajo (`https://<usuario>.github.io/<repositorio>/`).
