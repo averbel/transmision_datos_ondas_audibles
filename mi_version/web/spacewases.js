@@ -457,44 +457,57 @@ function toFloat64Array(signal) {
   return Float64Array.from(signal);
 }
 
+// FFT mas larga que se usa para correlar. Senales mas largas se procesan por bloques
+// (solapar y guardar): una FFT de millones de puntos es varias veces mas lenta por
+// muestra que muchas de este tamano, y en un movil congelaba la pagina segundos.
+const MAX_CORRELATION_FFT = 1 << 16;
+
 function findChirpInternal(s, reverse) {
   const n = s.length;
   const length = CHIRP.length;
   if (n < length) return null;
-  const nfft = 1 << bitLength(n + length - 2);
-  const re = new Float64Array(nfft);
-  const im = new Float64Array(nfft);
-  re.set(s, 0);
-  fft(re, im, false);
+  const count = n - length + 1;
+  const nfft = Math.min(MAX_CORRELATION_FFT, 1 << bitLength(n + length - 2));
+  const step = nfft - length + 1;
   const tf = templateFft(reverse, nfft);
   const tre = tf.re;
   const tim = tf.im;
-  for (let i = 0; i < nfft; i++) {
-    const ar = re[i];
-    const ai = im[i];
-    const br = tre[i];
-    const bi = tim[i];
-    re[i] = ar * br - ai * bi;
-    im[i] = ar * bi + ai * br;
-  }
-  fft(re, im, true);
+  const re = new Float64Array(nfft);
+  const im = new Float64Array(nfft);
 
   let energy = 0;
   for (let i = 0; i < length; i++) energy += s[i] * s[i];
   let bestIndex = 0;
   let bestScore = -Infinity;
-  const count = n - length + 1;
-  for (let k = 0; k < count; k++) {
-    if (k > 0) {
-      const add = s[k + length - 1];
-      const sub = s[k - 1];
-      energy += add * add - sub * sub;
+  for (let k0 = 0; k0 < count; k0 += step) {
+    // Bloque s[k0, k0 + nfft): sus salidas validas son las correlaciones k0..k0+step-1.
+    re.fill(0);
+    im.fill(0);
+    re.set(s.subarray(k0, Math.min(n, k0 + nfft)), 0);
+    fft(re, im, false);
+    for (let i = 0; i < nfft; i++) {
+      const ar = re[i];
+      const ai = im[i];
+      const br = tre[i];
+      const bi = tim[i];
+      re[i] = ar * br - ai * bi;
+      im[i] = ar * bi + ai * br;
     }
-    const denom = Math.sqrt(Math.max(energy, 0) * CHIRP_ENERGY) + 1e-12;
-    const score = Math.abs(re[length - 1 + k]) / denom;
-    if (score > bestScore) {
-      bestScore = score;
-      bestIndex = k;
+    fft(re, im, true);
+
+    const end = Math.min(count, k0 + step);
+    for (let k = k0; k < end; k++) {
+      if (k > 0) {
+        const add = s[k + length - 1];
+        const sub = s[k - 1];
+        energy += add * add - sub * sub;
+      }
+      const denom = Math.sqrt(Math.max(energy, 0) * CHIRP_ENERGY) + 1e-12;
+      const score = Math.abs(re[length - 1 + k - k0]) / denom;
+      if (score > bestScore) {
+        bestScore = score;
+        bestIndex = k;
+      }
     }
   }
   return { index: bestIndex, score: bestScore };

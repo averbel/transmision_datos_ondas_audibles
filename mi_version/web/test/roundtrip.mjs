@@ -15,6 +15,7 @@ import {
   demodulate,
   signalSeconds,
   masterKey,
+  findChirp,
 } from "../spacewases.js";
 
 let passed = 0;
@@ -282,6 +283,36 @@ function gaussian(rng) {
   } catch (error) {
     fail("AWGN 0 dB robust", error.message);
   }
+}
+
+{
+  // La correlación por bloques encuentra el chirp exacto también cuando cae en la
+  // frontera entre bloques, y sobre 90 s tarda poco.
+  const chirp = modulate(new Uint8Array(0)).subarray(0, CHIRP_LEN);
+  const rng = makeRng(0xc41f);
+  const step = (1 << 16) - CHIRP_LEN + 1;
+  let ok = true;
+  let detail = "";
+  for (const pos of [0, step - 1, step, step + 1, 2 * step - CHIRP_LEN, 300000 - CHIRP_LEN]) {
+    const s = new Float32Array(300000);
+    for (let i = 0; i < s.length; i++) s[i] = 0.05 * gaussian(rng);
+    for (let i = 0; i < CHIRP_LEN; i++) s[pos + i] += 0.5 * chirp[i];
+    const found = findChirp(s);
+    if (found.index !== pos || found.score < 0.9) {
+      ok = false;
+      detail = `pos ${pos}: ${found.index} (${found.score.toFixed(3)})`;
+    }
+  }
+  if (ok) pass("findChirp por bloques: posición exacta en las fronteras");
+  else fail("findChirp por bloques: posición exacta en las fronteras", detail);
+
+  const long = new Float32Array(90 * FS);
+  long.set(chirp, 60 * FS);
+  const started = performance.now();
+  const found = findChirp(long);
+  const elapsed = performance.now() - started;
+  if (found.index === 60 * FS && elapsed < 2500) pass(`findChirp sobre 90 s en ${elapsed.toFixed(0)} ms`);
+  else fail("findChirp sobre 90 s", `índice ${found.index}, ${elapsed.toFixed(0)} ms`);
 }
 
 {

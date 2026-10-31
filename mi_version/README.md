@@ -18,7 +18,7 @@ Módem acústico propio en Python (solo `numpy` y la biblioteca estándar) para 
 ```bash
 cd web
 python -m http.server 8790
-node test/roundtrip.mjs   # 51 pruebas, incluye WAV generados por Python
+node test/roundtrip.mjs   # 53 pruebas, incluye WAV generados por Python
 node test/stream.mjs      # 10 pruebas del receptor en flujo y del remuestreo
 ```
 
