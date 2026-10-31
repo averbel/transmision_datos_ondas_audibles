@@ -49,7 +49,8 @@ for (const select of [sendProfile, localProfile]) {
     const symbolMs = Math.round((FRAMES[name] * 1024 * 1000) / FS);
     const option = document.createElement("option");
     option.value = name;
-    option.textContent = `${PROFILE_LABELS[name]} · símbolo de ${symbolMs} ms · ${chunk} B por bloque · RS ${parity}`;
+    option.textContent = `${PROFILE_LABELS[name]} (${symbolMs} ms por símbolo)`;
+    option.title = `${chunk} B por bloque, ${parity} B de paridad Reed-Solomon`;
     select.append(option);
   }
   select.value = "normal";
