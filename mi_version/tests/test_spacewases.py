@@ -79,8 +79,10 @@ def test_reassembler_desordenado_y_duplicado():
     total = 3
     chunk = 48
     payloads = [b"AAA", b"BBB", b"CCC"]
+    session = frame.new_session()
     frames = [
-        frame.parse_frame(frame.encode_fragment(77, i, total, payloads[i], key, 1, chunk), key)
+        frame.parse_frame(
+            frame.encode_fragment(77, i, total, payloads[i], key, 1, chunk, session), key)
         for i in range(total)
     ]
     reassembler = frame.Reassembler()
@@ -88,6 +90,51 @@ def test_reassembler_desordenado_y_duplicado():
     assert reassembler.push(frames[0]) is None
     assert reassembler.push(frames[1]) is None
     assert reassembler.push(frames[2]) == b"AAABBBCCC"
+
+
+def test_payload_cifrado_en_el_aire():
+    key = b"k"
+    plain = frame.encode_fragment(1, 0, 1, b"texto secreto", key, 1, 48)
+    assert b"texto secreto" not in plain
+    assert frame.parse_frame(plain, key)["payload"] == b"texto secreto"
+
+
+def test_v1_rechazada_con_clave_y_v2_sin_clave():
+    v1 = frame.encode_fragment(1, 0, 1, b"hola", None, 1, 48)
+    v2 = frame.encode_fragment(1, 0, 1, b"hola", b"k", 1, 48)
+    assert frame.parse_frame(v1, b"k") is None
+    assert frame.parse_frame(v2, None) is None
+
+
+def test_repeticion_rechazada_con_guardia():
+    key = b"k"
+    signal = send(b"abrir puerta", key, "normal")
+    guard = frame.ReplayGuard()
+    assert receive(signal, key, guard) == b"abrir puerta"
+    assert receive(signal, key, guard) is None
+    assert receive(send(b"abrir puerta", key, "normal"), key, guard) == b"abrir puerta"
+
+
+def test_sin_guardia_no_hay_proteccion():
+    signal = send(b"x", b"k", "normal")
+    assert receive(signal, b"k") == b"x"
+    assert receive(signal, b"k") == b"x"
+
+
+def test_ventana_de_tiempo():
+    key = b"k"
+    clock = {"now": 1_000_000.0}
+    guard = frame.ReplayGuard(max_age=60, clock=lambda: clock["now"])
+    session_viejo = frame.new_session(now=clock["now"] - 3600)
+    plain = frame.encode_fragment(1, 0, 1, b"viejo", key, 1, 48, session_viejo)
+    raw = frame.rs.encode(plain, 10)
+    assert frame.decode_stream(raw, key, [api.PROFILES["normal"]], guard) is None
+    fresh = frame.encode_fragment(1, 0, 1, b"nuevo", key, 1, 48,
+                                  frame.new_session(now=clock["now"]))
+    raw = frame.rs.encode(fresh, 10)
+    assert frame.decode_stream(raw, key, [api.PROFILES["normal"]], guard) == b"nuevo"
+    clock["now"] += 3600
+    assert frame.decode_stream(raw, key, [api.PROFILES["normal"]], guard) is None
 
 
 def test_mensaje_vacio():

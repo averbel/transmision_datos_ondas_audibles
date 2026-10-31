@@ -24,9 +24,14 @@ def send(msg: bytes, key: bytes | None = None, profile: str = "normal") -> np.nd
     return modem.modulate(raw)
 
 
-def receive(signal, key: bytes | None = None) -> bytes | None:
-    """Demodula y valida la senal; devuelve el mensaje o None."""
+def receive(signal, key: bytes | None = None,
+            guard: frame.ReplayGuard | None = None) -> bytes | None:
+    """Demodula y valida la senal; devuelve el mensaje o None.
+
+    Pasa un frame.ReplayGuard (compartido entre llamadas) para rechazar
+    repeticiones y mensajes viejos; sin el, no hay proteccion contra repeticion.
+    """
     raw = modem.demodulate(signal)
     if raw is None:
         return None
-    return frame.decode_stream(raw, key, _PROFILE_ORDER)
+    return frame.decode_stream(raw, key, _PROFILE_ORDER, guard)
