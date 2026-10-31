@@ -5,6 +5,12 @@ grupos de 16 tonos separados 6 bins (grupo A en 40+6k, grupo B en 43+6k).
 Cada simbolo transmite un nibble por grupo, es decir, un byte. La alternativa
 de 6 tonos por simbolo (3 bytes) se descarta para mantener baja la interferencia
 entre grupos.
+
+Cada simbolo va precedido de un prefijo ciclico de CYCLIC_PREFIX muestras: como
+cada tono completa un numero entero de ciclos en SYMBOL muestras, el prefijo es
+la continuacion periodica del tono. El receptor analiza solo las SYMBOL muestras
+posteriores, asi un eco de sala con retardo menor que el prefijo (unos 5 ms,
+1.8 m de diferencia de camino) cae dentro del prefijo y no contamina el simbolo.
 """
 
 from __future__ import annotations
@@ -15,6 +21,7 @@ import numpy as np
 
 FS = 48000
 SYMBOL = 1024
+CYCLIC_PREFIX = 256
 BIN_HZ = FS / SYMBOL
 BASE_BIN = 40
 N_TONES = 16
@@ -57,7 +64,7 @@ def _chirp() -> np.ndarray:
     return _CHIRP
 
 
-def _envelope(n: int = SYMBOL) -> np.ndarray:
+def _envelope(n: int) -> np.ndarray:
     env = np.ones(n)
     ramp = min(SYMBOL_RAMP, n // 2)
     r = np.arange(ramp, dtype=np.float64) / max(ramp - 1, 1)
@@ -75,13 +82,14 @@ def _as_bytes(data) -> bytes:
     return bytes(int(v) for v in data)
 
 
-def _tone_matrix(bins: list[int]) -> np.ndarray:
-    n = np.arange(SYMBOL, dtype=np.float64)[:, None]
+def _tone_matrix(bins: list[int], cp: int) -> np.ndarray:
+    """Tonos de cp + SYMBOL muestras; la fase del cuerpo arranca en la muestra cp."""
+    n = np.arange(-cp, SYMBOL, dtype=np.float64)[:, None]
     freqs = np.asarray(bins, dtype=np.float64)[None, :]
     return TONE_AMP * np.sin(2.0 * np.pi * n * freqs / SYMBOL)
 
 
-def modulate(data_in) -> np.ndarray:
+def modulate(data_in, cp: int = CYCLIC_PREFIX) -> np.ndarray:
     """Convierte bytes (o una secuencia de enteros 0-255) en una senal float32."""
     data = _as_bytes(data_in)
     symbols = np.frombuffer(data, dtype=np.uint8)
@@ -89,9 +97,9 @@ def modulate(data_in) -> np.ndarray:
     low = symbols & 0x0F
 
     if len(symbols):
-        tones_a = _tone_matrix(GROUP_A)
-        tones_b = _tone_matrix(GROUP_B)
-        matrix = (tones_a[:, high] + tones_b[:, low]).T * _envelope()[None, :]
+        tones_a = _tone_matrix(GROUP_A, cp)
+        tones_b = _tone_matrix(GROUP_B, cp)
+        matrix = (tones_a[:, high] + tones_b[:, low]).T * _envelope(cp + SYMBOL)[None, :]
         body = matrix.reshape(-1)
     else:
         body = np.zeros(0, dtype=np.float64)
@@ -134,7 +142,7 @@ def _tone_scores(spec: np.ndarray, bins: list[int]) -> np.ndarray:
     return out
 
 
-def demodulate(signal) -> bytes | None:
+def demodulate(signal, cp: int = CYCLIC_PREFIX) -> bytes | None:
     """Recupera los bytes de una senal; devuelve None si no hay sincronia."""
     s = np.asarray(signal, dtype=np.float64).ravel()
     if s.size == 0:
@@ -147,6 +155,7 @@ def demodulate(signal) -> bytes | None:
     if score < SYNC_THRESHOLD:
         return None
 
+    period = cp + SYMBOL
     data_start = start + len(chirp) + GUARD
     if data_start >= len(s):
         return b""
@@ -154,13 +163,13 @@ def demodulate(signal) -> bytes | None:
     end_found = _find_chirp(s[data_start:], reverse=True)
     if end_found is not None and end_found[1] >= SYNC_THRESHOLD:
         end_start = data_start + end_found[0]
-        count = max(0, (end_start - GUARD - data_start) // SYMBOL)
+        count = max(0, (end_start - GUARD - data_start) // period)
     else:
-        count = max(0, (len(s) - data_start) // SYMBOL)
+        count = max(0, (len(s) - data_start) // period)
 
     if count == 0:
         return b""
-    idx = data_start + np.arange(count) * SYMBOL
+    idx = data_start + cp + np.arange(count) * period
     idx = idx[idx + SYMBOL <= len(s)]
     if len(idx) == 0:
         return b""

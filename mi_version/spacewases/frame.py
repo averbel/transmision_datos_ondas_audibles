@@ -232,8 +232,16 @@ class Reassembler:
 
 
 def pack_message(msg: bytes, key: bytes | None, profile_id: int,
-                 chunk: int, parity: int, msg_id: int | None = None) -> bytes:
-    """Fragmenta, protege con RS y concatena los bloques listos para el modem."""
+                 chunk: int, parity: int, msg_id: int | None = None,
+                 repeat: int = 1) -> bytes:
+    """Fragmenta, protege con RS y concatena los bloques listos para el modem.
+
+    Con repeat > 1 la secuencia completa de bloques se envia varias veces
+    (misma sesion): el receptor reensambla con los fragmentos buenos de
+    cualquier copia.
+    """
+    if repeat < 1:
+        raise ValueError("repeat debe ser >= 1")
     if chunk <= 0 or chunk > 249:
         raise ValueError("chunk invalido")
     total = max(1, math.ceil(len(msg) / chunk))
@@ -247,7 +255,7 @@ def pack_message(msg: bytes, key: bytes | None, profile_id: int,
         plain = encode_fragment(ident, idx, total, payload, key, profile_id,
                                 chunk, session)
         blocks.append(rs.encode(plain, parity))
-    return b"".join(blocks)
+    return b"".join(blocks) * repeat
 
 
 def decode_stream(raw: bytes, key: bytes | None,
@@ -273,16 +281,17 @@ def decode_stream(raw: bytes, key: bytes | None,
                     decoded[i] = None
             return decoded[i]
 
-        for nblocks in range(max_blocks, 0, -1):
-            frames = [block_frame(i) for i in range(nblocks)]
-            if any(f is None for f in frames):
+        # Cada bloque se valida por separado: uno danado no descarta al resto, y
+        # si el mensaje se envio repetido los fragmentos buenos de cualquier
+        # copia completan los que faltan.
+        reassembler = Reassembler()
+        for i in range(max_blocks):
+            fragment = block_frame(i)
+            if fragment is None:
                 continue
-            reassembler = Reassembler()
-            result = None
-            for frame in frames:
-                result = reassembler.push(frame)
+            result = reassembler.push(fragment)
             if result is not None:
-                if guard is not None and not guard.accept(frames[0]["session"]):
+                if guard is not None and not guard.accept(fragment["session"]):
                     return None
                 return result
     return None

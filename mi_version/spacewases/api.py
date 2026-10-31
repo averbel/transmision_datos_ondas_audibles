@@ -15,12 +15,18 @@ PROFILES: dict[str, tuple[int, int, int]] = {
 _PROFILE_ORDER = [PROFILES["robust"], PROFILES["normal"], PROFILES["fast"]]
 
 
-def send(msg: bytes, key: bytes | None = None, profile: str = "normal") -> np.ndarray:
-    """Genera la senal acustica que transporta msg con el perfil indicado."""
+def send(msg: bytes, key: bytes | None = None, profile: str = "normal",
+         repeat: int = 1) -> np.ndarray:
+    """Genera la senal acustica que transporta msg con el perfil indicado.
+
+    repeat > 1 envia el mensaje varias veces seguidas para tolerar bloques
+    danados (cuesta repeat veces el tiempo de aire).
+    """
     if profile not in PROFILES:
         raise ValueError("perfil desconocido: %s" % profile)
     profile_id, chunk, parity = PROFILES[profile]
-    raw = frame.pack_message(bytes(msg), key, profile_id, chunk, parity)
+    raw = frame.pack_message(bytes(msg), key, profile_id, chunk, parity,
+                             repeat=repeat)
     return modem.modulate(raw)
 
 

@@ -40,17 +40,19 @@ Con ruido blanco gaussiano **simulado** (mensaje de 16 B, 100 intentos por punto
 
 | Perfil | 100 % de éxito desde | Tasa neta |
 |---|---|---|
-| robust | −10 dB | 64,6 bps |
-| normal | −10 dB | 72,5 bps |
-| fast | −8 dB | 76,1 bps |
+| robust | −10 dB | 53,4 bps |
+| normal | −10 dB | 60,1 bps |
+| fast | −10 dB | 63,3 bps |
 
-Estas cifras son de simulación, no de aire. Tampoco se compararon con ggwave bajo las mismas condiciones, así que no deben leerse como una ventaja sobre él. La prueba real con altavoz y micrófono está **pendiente**: hay una serie parcial (168 de 180 ensayos, `aire_resultados.csv`) sin analizar y cuyas condiciones no se controlaron hasta el final, así que no es un resultado.
+El prefijo cíclico (256 muestras por símbolo de 1024) costó un 25 % de tasa neta; antes eran 64,6 / 72,5 / 76,1 bps. La tasa de éxito con ruido blanco mejoró (p. ej. robust a −12 dB pasó de 33 a 89 de 100), probablemente porque la ventana de análisis ya no incluye las rampas de la envolvente; no se ha aislado la causa.
+
+Con eco simulado (una réplica retardada 100 muestras, ≈2 ms, con la misma amplitud) el módem sin prefijo falla decenas de bytes de 200 y con prefijo casi ninguno; con retardos mayores que el prefijo (≥ 300 muestras) no hay mejora. Estas cifras son de simulación, no de aire. Tampoco se compararon con ggwave bajo las mismas condiciones, así que no deben leerse como una ventaja sobre él. La prueba real con altavoz y micrófono está **pendiente**: hay una serie parcial (168 de 180 ensayos, `aire_resultados.csv`) sin analizar y cuyas condiciones no se controlaron hasta el final, así que no es un resultado.
 
 ## Límites conocidos
 
-- El HMAC de 4 bytes autentica pero no cifra: el mensaje viaja en claro.
-- No hay protección contra repetición: una trama grabada se puede reproducir. Con `key=None` la trama se firma con clave vacía y cualquiera puede fabricarla.
-- Un mensaje es un solo flujo: si un bloque Reed-Solomon falla, se pierde completo.
-- Sin prefijo cíclico ni seguimiento de reloj: el eco de una sala real puede causar interferencia entre símbolos. No está medido.
+- Con `key=None` (trama v1) el mensaje viaja en claro y se firma con clave vacía: cualquiera puede fabricar tramas. Con clave (trama v2) el mensaje va cifrado y autenticado con una etiqueta de 8 bytes.
+- La protección contra repetición es opcional y del receptor: hay que pasar un `ReplayGuard` a `receive`. Exige relojes razonablemente sincronizados (ventana de 120 s por defecto).
+- Cada bloque Reed-Solomon se valida por separado, pero un mensaje de varios fragmentos solo se recupera si llegan todos. `send(..., repeat=N)` lo envía N veces para rellenar huecos, a costa de N veces el tiempo de aire.
+- El prefijo cíclico solo cubre ecos de menos de unos 5 ms y no hay seguimiento de reloj. El eco de una sala real no está medido.
 
 `docs/SPEC.md` es la especificación que se dio al agente que escribió el código inicial.

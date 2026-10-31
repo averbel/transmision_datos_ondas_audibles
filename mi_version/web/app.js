@@ -6,6 +6,7 @@ import {
   PROFILES,
   FS,
   SYMBOL,
+  CYCLIC_PREFIX,
   CHIRP_LEN,
   GUARD,
   dataLen,
@@ -66,7 +67,7 @@ function estimateSeconds(byteLength, profileName, keyed = false) {
   const [, chunk, parity] = PROFILES[profileName];
   const total = Math.max(1, Math.ceil(byteLength / chunk));
   const raw = total * (dataLen(chunk, keyed) + parity);
-  const samples = 2 * CHIRP_LEN + 2 * GUARD + raw * SYMBOL;
+  const samples = 2 * CHIRP_LEN + 2 * GUARD + raw * (SYMBOL + CYCLIC_PREFIX);
   return samples / FS;
 }
 

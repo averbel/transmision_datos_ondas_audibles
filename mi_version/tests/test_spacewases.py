@@ -137,6 +137,53 @@ def test_ventana_de_tiempo():
     assert frame.decode_stream(raw, key, [api.PROFILES["normal"]], guard) is None
 
 
+def test_recuperacion_por_fragmento_con_repeticion():
+    msg = _mensaje(100, seed=21)
+    profile = api.PROFILES["normal"]
+    block_len = frame.data_len(profile[1], False) + profile[2]
+    once = bytearray(frame.pack_message(msg, None, *profile))
+    twice = bytearray(frame.pack_message(msg, None, *profile, repeat=2))
+    for raw in (once, twice):
+        for i in range(block_len + 5, block_len + 25):
+            raw[i] ^= 0xFF
+    assert frame.decode_stream(bytes(once), None, [profile]) is None
+    assert frame.decode_stream(bytes(twice), None, [profile]) == msg
+
+
+def test_repeat_invalido():
+    with pytest.raises(ValueError):
+        send(b"x", None, "normal", repeat=0)
+
+
+def test_repeticion_por_el_aire_con_clave():
+    key = b"k"
+    msg = _mensaje(100, seed=22)
+    guard = frame.ReplayGuard()
+    assert receive(send(msg, key, "normal", repeat=2), key, guard) == msg
+    assert receive(send(msg, key, "normal", repeat=2), key, guard) == msg
+
+
+def _con_eco(signal, delay, gain):
+    out = np.zeros(len(signal) + delay, dtype=np.float64)
+    out[:len(signal)] += signal
+    out[delay:] += gain * signal
+    return out
+
+
+def test_prefijo_ciclico_resiste_eco():
+    from spacewases import modem
+    data = _mensaje(200, seed=31)
+    delay, gain = 100, 1.0
+
+    def errores(cp):
+        got = modem.demodulate(_con_eco(modem.modulate(data, cp), delay, gain), cp)
+        got = (got or b"")[:len(data)].ljust(len(data), b"\x00")
+        return sum(a != b for a, b in zip(got, data))
+
+    assert errores(modem.CYCLIC_PREFIX) <= 3
+    assert errores(0) > 20
+
+
 def test_mensaje_vacio():
     assert receive(send(b"", None, "normal"), None) == b""
 

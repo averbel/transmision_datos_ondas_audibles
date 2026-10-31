@@ -1,5 +1,6 @@
 export const FS = 48000;
 export const SYMBOL = 1024;
+export const CYCLIC_PREFIX = 256;
 export const BASE_BIN = 40;
 export const N_TONES = 16;
 export const TONE_STEP = 6;
@@ -246,17 +247,21 @@ const CHIRP_REVERSED = CHIRP.slice().reverse();
 let CHIRP_ENERGY = 0;
 for (let i = 0; i < CHIRP.length; i++) CHIRP_ENERGY += CHIRP[i] * CHIRP[i];
 
+// Cada simbolo ocupa CYCLIC_PREFIX + SYMBOL muestras: el prefijo es la continuacion
+// periodica del tono y el receptor analiza solo las SYMBOL muestras posteriores.
+const SYMBOL_PERIOD = CYCLIC_PREFIX + SYMBOL;
+
 function makeSymbolEnvelope() {
-  const env = new Float64Array(SYMBOL);
+  const env = new Float64Array(SYMBOL_PERIOD);
   env.fill(1);
-  const ramp = Math.min(SYMBOL_RAMP, Math.trunc(SYMBOL / 2));
+  const ramp = Math.min(SYMBOL_RAMP, Math.trunc(SYMBOL_PERIOD / 2));
   const edge = new Float64Array(ramp);
   for (let i = 0; i < ramp; i++) {
     const r = i / Math.max(ramp - 1, 1);
     edge[i] = 0.5 * (1 - Math.cos(Math.PI * r));
   }
   for (let i = 0; i < ramp; i++) env[i] *= edge[i];
-  for (let i = 0; i < ramp; i++) env[SYMBOL - ramp + i] *= edge[ramp - 1 - i];
+  for (let i = 0; i < ramp; i++) env[SYMBOL_PERIOD - ramp + i] *= edge[ramp - 1 - i];
   return env;
 }
 
@@ -266,9 +271,9 @@ function makeToneTable(offset) {
   const table = new Array(N_TONES);
   for (let k = 0; k < N_TONES; k++) {
     const freq = BASE_BIN + offset + TONE_STEP * k;
-    const tone = new Float64Array(SYMBOL);
-    for (let n = 0; n < SYMBOL; n++) {
-      tone[n] = TONE_AMP * Math.sin((2 * Math.PI * n * freq) / SYMBOL);
+    const tone = new Float64Array(SYMBOL_PERIOD);
+    for (let n = 0; n < SYMBOL_PERIOD; n++) {
+      tone[n] = TONE_AMP * Math.sin((2 * Math.PI * (n - CYCLIC_PREFIX) * freq) / SYMBOL);
     }
     table[k] = tone;
   }
@@ -484,9 +489,9 @@ function demodulate(signal, onStatus) {
   let count;
   if (endFound && endFound.score >= SYNC_THRESHOLD) {
     const endStart = dataStart + endFound.index;
-    count = Math.max(0, Math.trunc((endStart - GUARD - dataStart) / SYMBOL));
+    count = Math.max(0, Math.trunc((endStart - GUARD - dataStart) / SYMBOL_PERIOD));
   } else {
-    count = Math.max(0, Math.trunc((s.length - dataStart) / SYMBOL));
+    count = Math.max(0, Math.trunc((s.length - dataStart) / SYMBOL_PERIOD));
   }
   if (count === 0) return new Uint8Array(0);
 
@@ -497,7 +502,7 @@ function demodulate(signal, onStatus) {
   let written = 0;
 
   for (let b = 0; b < count; b++) {
-    const offset = dataStart + b * SYMBOL;
+    const offset = dataStart + b * SYMBOL_PERIOD + CYCLIC_PREFIX;
     if (offset + SYMBOL > s.length) break;
     let mean = 0;
     for (let i = 0; i < SYMBOL; i++) mean += s[offset + i];
@@ -519,7 +524,7 @@ function demodulate(signal, onStatus) {
 export function modulate(data) {
   const bytes = data instanceof Uint8Array ? data : Uint8Array.from(data);
   const symbols = bytes.length;
-  const total = 2 * CHIRP_LEN + 2 * GUARD + symbols * SYMBOL;
+  const total = 2 * CHIRP_LEN + 2 * GUARD + symbols * SYMBOL_PERIOD;
   const out = new Float32Array(total);
   out.set(CHIRP, 0);
   let offset = CHIRP_LEN + GUARD;
@@ -529,10 +534,10 @@ export function modulate(data) {
     const low = value & 0x0f;
     const ta = TONES_A[high];
     const tb = TONES_B[low];
-    for (let i = 0; i < SYMBOL; i++) {
+    for (let i = 0; i < SYMBOL_PERIOD; i++) {
       out[offset + i] = (ta[i] + tb[i]) * SYMBOL_ENVELOPE[i];
     }
-    offset += SYMBOL;
+    offset += SYMBOL_PERIOD;
   }
   offset += GUARD;
   for (let i = 0; i < CHIRP_LEN; i++) out[offset + i] = CHIRP_REVERSED[i];
@@ -797,7 +802,8 @@ function nextMessageId() {
   return lastMessageId;
 }
 
-async function packMessage(msg, key, profileId, chunk, parity, msgId = null) {
+async function packMessage(msg, key, profileId, chunk, parity, msgId = null, repeat = 1) {
+  if (!Number.isInteger(repeat) || repeat < 1) throw new Error("repeat debe ser >= 1");
   if (chunk <= 0 || chunk > 249) throw new Error("chunk invalido");
   const total = Math.max(1, Math.ceil(msg.length / chunk));
   if (total > 255) throw new Error("mensaje demasiado largo");
@@ -809,7 +815,8 @@ async function packMessage(msg, key, profileId, chunk, parity, msgId = null) {
     const plain = await encodeFragment(ident, idx, total, payload, key, profileId, chunk, session);
     blocks.push(rsEncode(plain, parity));
   }
-  return concatBytes(blocks);
+  const once = concatBytes(blocks);
+  return concatBytes(Array.from({ length: repeat }, () => once));
 }
 
 async function decodeStream(raw, key, profiles, guard = null) {
@@ -832,23 +839,16 @@ async function decodeStream(raw, key, profiles, guard = null) {
       return frame;
     };
 
-    for (let nblocks = maxBlocks; nblocks > 0; nblocks--) {
-      const frames = [];
-      let valid = true;
-      for (let i = 0; i < nblocks; i++) {
-        const frame = await blockFrame(i);
-        if (frame === null) {
-          valid = false;
-          break;
-        }
-        frames.push(frame);
-      }
-      if (!valid) continue;
-      const reassembler = new Reassembler();
-      let result = null;
-      for (const frame of frames) result = reassembler.push(frame);
+    // Cada bloque se valida por separado: uno danado no descarta al resto, y si el
+    // mensaje se envio repetido los fragmentos buenos de cualquier copia completan
+    // los que faltan.
+    const reassembler = new Reassembler();
+    for (let i = 0; i < maxBlocks; i++) {
+      const fragment = await blockFrame(i);
+      if (fragment === null) continue;
+      const result = reassembler.push(fragment);
       if (result !== null) {
-        if (guard !== null && !guard.accept(frames[0].session)) return null;
+        if (guard !== null && !guard.accept(fragment.session)) return null;
         return result;
       }
     }
@@ -856,13 +856,13 @@ async function decodeStream(raw, key, profiles, guard = null) {
   return null;
 }
 
-export async function send(msg, key = null, profile = "normal") {
+export async function send(msg, key = null, profile = "normal", repeat = 1) {
   if (!Object.prototype.hasOwnProperty.call(PROFILES, profile)) {
     throw new Error(`perfil desconocido: ${profile}`);
   }
   const [profileId, chunk, parity] = PROFILES[profile];
   const bytes = msg instanceof Uint8Array ? msg : Uint8Array.from(msg);
-  const raw = await packMessage(bytes, key, profileId, chunk, parity);
+  const raw = await packMessage(bytes, key, profileId, chunk, parity, null, repeat);
   return modulate(raw);
 }
 

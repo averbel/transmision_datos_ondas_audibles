@@ -1,5 +1,15 @@
 import { readFileSync } from "node:fs";
-import { send, receive, wavDecode, PROFILES, ReplayGuard } from "../spacewases.js";
+import {
+  send,
+  receive,
+  wavDecode,
+  PROFILES,
+  ReplayGuard,
+  CHIRP_LEN,
+  GUARD,
+  SYMBOL,
+  CYCLIC_PREFIX,
+} from "../spacewases.js";
 
 let passed = 0;
 let failed = 0;
@@ -114,6 +124,27 @@ for (const [file, keyText, expected] of fixtures) {
     const signal = await send(message, key, "normal");
     return (await receive(signal, key, null, guard)) === null;
   });
+}
+
+{
+  const message = makeMessage(100);
+  const wipeBlock = (signal) => {
+    // Anula 20 simbolos dentro del bloque 1 de la primera copia (normal: bloques de 68 simbolos).
+    const start = CHIRP_LEN + GUARD + 80 * (SYMBOL + CYCLIC_PREFIX);
+    const out = Float32Array.from(signal);
+    out.fill(0, start, start + 20 * (SYMBOL + CYCLIC_PREFIX));
+    return out;
+  };
+  try {
+    const once = await receive(wipeBlock(await send(message, null, "normal")), null);
+    const twice = await receive(wipeBlock(await send(message, null, "normal", 2)), null);
+    if (once === null) pass("sin repetición un bloque anulado pierde el mensaje");
+    else fail("sin repetición un bloque anulado pierde el mensaje");
+    if (twice !== null && equalBytes(twice, message)) pass("repeat=2 recupera con un bloque anulado");
+    else fail("repeat=2 recupera con un bloque anulado");
+  } catch (error) {
+    fail("recuperación por fragmento", error.message);
+  }
 }
 
 function makeRng(seed) {
