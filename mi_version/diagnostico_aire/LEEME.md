@@ -17,5 +17,6 @@ Scripts que se usaron para investigar por qué `prueba_aire.py` falla (9 de 180 
 | `air_single_tone.py` | Separa diversidad de interferencia entre tonos: diseño actual, mismo nibble en ambos grupos y un solo tono |
 | `air_integrate.py` | Símbolos de 1, 2, 3 y 6 tramas con suma de tramas descartando la primera, como hace ggwave |
 | `air_div_frames.py` | Diversidad combinada con símbolos de 1, 2 y 3 tramas, sin DFE |
+| `grabar_secuencia.py` | Graba tres mensajes seguidos por aire para pasarlos por el receptor en flujo con `web/test/stream_grabacion.mjs` |
 
 Resultados y conclusiones: ver el punto 0 de `CONTINUAR.md` en la raíz del repositorio.
