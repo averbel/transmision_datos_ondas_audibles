@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="SpaceWases: módem acústico para transmitir texto por sonido con el altavoz y el micrófono.">
   <title>SpaceWases · módem acústico</title>
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=20261031">
 </head>
 <body>
   <header class="site-header">
@@ -30,7 +30,8 @@
       <div class="field-row">
         <div class="field">
           <label for="send-profile">Perfil</label>
-          <select id="send-profile"></select>
+          <select id="send-profile" aria-describedby="profile-hint"></select>
+          <p id="profile-hint" class="meta">Robusto tarda más pero aguanta mejor el ruido y el eco de la sala; Normal y Rápido son más cortos.</p>
         </div>
         <div class="field">
           <label for="send-key">Clave (opcional)</label>
@@ -60,7 +61,7 @@
 
     <section class="panel panel-receive" aria-labelledby="receive-title">
       <h2 id="receive-title">Recibir</h2>
-      <p class="panel-note">Escucha con el micrófono o abre un WAV. La clave debe coincidir con la usada al emitir.</p>
+      <p class="panel-note">Escucha con el micrófono o abre un WAV. La clave debe coincidir con la usada al emitir. Por aire funciona mejor con los dispositivos a 1–2 m y el volumen del emisor alto pero sin distorsionar.</p>
 
       <label for="receive-key">Clave (opcional)</label>
       <input id="receive-key" type="password" autocomplete="off" spellcheck="false">
@@ -69,7 +70,7 @@
         <input id="replay-guard" type="checkbox" checked>
         Rechazar mensajes con clave repetidos o antiguos al escuchar
       </label>
-      <p class="meta">Evita que alguien grabe un mensaje y lo reproduzca después. Exige que la hora de ambos dispositivos esté en hora (tolerancia de 2 minutos). No se aplica a los WAV cargados.</p>
+      <p class="meta">Evita que alguien grabe un mensaje y lo reproduzca después. Exige que el reloj de ambos dispositivos esté en hora (tolerancia de 2 minutos). No se aplica a los WAV cargados.</p>
 
       <div class="actions">
         <button id="listen" type="button" class="primary">Escuchar</button>
@@ -118,9 +119,9 @@
   <footer class="wrap site-footer">
     <p><strong>SpaceWases</strong> · Andrés Felipe Verbel Pacheco (CUC)</p>
     <p>Sin clave el mensaje viaja en claro y cualquiera puede fabricar tramas válidas. Con clave se cifra y se autentica, pero la construcción es propia y no ha sido auditada: no la uses para información sensible. Cualquier micrófono cercano recibe la señal.</p>
-    <p>Los resultados de rendimiento son de simulación; la prueba real con altavoz y micrófono todavía no es concluyente.</p>
+    <p>Probado por aire en un solo portátil y una sala (157 de 180 mensajes recibidos); falta probarlo en otros dispositivos.</p>
   </footer>
 
-  <script type="module" src="app.js"></script>
+  <script type="module" src="app.js?v=20261031"></script>
 </body>
 </html>

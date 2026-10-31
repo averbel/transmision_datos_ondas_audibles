@@ -9,7 +9,7 @@ import {
   FS,
   signalSeconds,
   StreamReceiver,
-} from "./spacewases.js";
+} from "./spacewases.js?v=20261031";
 
 const PROFILE_LABELS = {
   robust: "Robusto",
