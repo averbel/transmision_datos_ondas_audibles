@@ -275,6 +275,19 @@ button:disabled {
   font-size: 0.82rem;
 }
 
+label.check {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin: 0.9rem 0 0;
+  font-weight: 500;
+}
+
+label.check input {
+  margin-top: 0.2rem;
+  accent-color: var(--accent);
+}
+
 canvas {
   display: block;
   width: 100%;

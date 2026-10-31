@@ -737,16 +737,25 @@ export class ReplayGuard {
     this.maxAge = maxAge;
     this.clock = clock;
     this.seen = new Map();
+    this.lastReason = null;
   }
 
+  // Tras un rechazo, lastReason es "antiguo" (fuera de la ventana de tiempo) o "repetido".
   accept(session) {
+    this.lastReason = null;
     if (session === null) return true;
     const now = this.clock();
     const stamp = new DataView(session.buffer, session.byteOffset, 4).getUint32(0, false);
-    if (Math.abs(now - stamp) > this.maxAge) return false;
+    if (Math.abs(now - stamp) > this.maxAge) {
+      this.lastReason = "antiguo";
+      return false;
+    }
     for (const [id, t] of this.seen) if (Math.abs(now - t) > this.maxAge) this.seen.delete(id);
     const id = bytesToHex(session);
-    if (this.seen.has(id)) return false;
+    if (this.seen.has(id)) {
+      this.lastReason = "repetido";
+      return false;
+    }
     this.seen.set(id, stamp);
     return true;
   }

@@ -3,6 +3,7 @@ import {
   receive,
   wavEncode,
   wavDecode,
+  ReplayGuard,
   PROFILES,
   FS,
   SYMBOL,
@@ -23,6 +24,8 @@ const encoder = new TextEncoder();
 const sendText = document.getElementById("send-text");
 const sendProfile = document.getElementById("send-profile");
 const sendKey = document.getElementById("send-key");
+const sendRepeat = document.getElementById("send-repeat");
+const replayCheck = document.getElementById("replay-guard");
 const emitButton = document.getElementById("emit");
 const downloadButton = document.getElementById("download");
 const sendStatus = document.getElementById("send-status");
@@ -63,10 +66,15 @@ function keyFrom(input) {
   return input.value.length ? encoder.encode(input.value) : null;
 }
 
-function estimateSeconds(byteLength, profileName, keyed = false) {
+function repeatCount() {
+  const value = Number.parseInt(sendRepeat.value, 10);
+  return value >= 1 && value <= 3 ? value : 1;
+}
+
+function estimateSeconds(byteLength, profileName, keyed = false, repeat = 1) {
   const [, chunk, parity] = PROFILES[profileName];
   const total = Math.max(1, Math.ceil(byteLength / chunk));
-  const raw = total * (dataLen(chunk, keyed) + parity);
+  const raw = repeat * total * (dataLen(chunk, keyed) + parity);
   const samples = 2 * CHIRP_LEN + 2 * GUARD + raw * (SYMBOL + CYCLIC_PREFIX);
   return samples / FS;
 }
@@ -80,19 +88,22 @@ function updateDuration() {
     durationLabel.textContent = `Mensaje demasiado largo para el perfil ${PROFILE_LABELS[profile]}.`;
     return;
   }
-  const seconds = estimateSeconds(bytes, profile, keyFrom(sendKey) !== null);
+  const seconds = estimateSeconds(bytes, profile, keyFrom(sendKey) !== null, repeatCount());
   const formatted = seconds.toLocaleString("es", {
     minimumFractionDigits: 1,
     maximumFractionDigits: 1,
   });
   let text = `Duración estimada: ${formatted} s · ${bytes} B`;
-  if (seconds > 20) text += " · más de 20 s: puede superar la ventana de escucha en vivo";
+  if (seconds > SCAN_SECONDS) {
+    text += ` · más de ${SCAN_SECONDS} s: la escucha en vivo no la decodificará; usa un WAV o menos repeticiones`;
+  }
   durationLabel.textContent = text;
 }
 
 sendText.addEventListener("input", updateDuration);
 sendProfile.addEventListener("change", updateDuration);
 sendKey.addEventListener("input", updateDuration);
+sendRepeat.addEventListener("change", updateDuration);
 
 let playbackContext = null;
 
@@ -118,7 +129,12 @@ emitButton.addEventListener("click", async () => {
   emitButton.disabled = true;
   setStatus(sendStatus, "Generando señal…", "busy");
   try {
-    const signal = await send(encoder.encode(sendText.value), keyFrom(sendKey), sendProfile.value);
+    const signal = await send(
+      encoder.encode(sendText.value),
+      keyFrom(sendKey),
+      sendProfile.value,
+      repeatCount()
+    );
     const context = await ensurePlaybackContext();
     const buffer = context.createBuffer(1, signal.length, FS);
     buffer.getChannelData(0).set(signal);
@@ -155,7 +171,12 @@ downloadButton.addEventListener("click", async () => {
   downloadButton.disabled = true;
   setStatus(sendStatus, "Preparando WAV…", "busy");
   try {
-    const signal = await send(encoder.encode(sendText.value), keyFrom(sendKey), sendProfile.value);
+    const signal = await send(
+      encoder.encode(sendText.value),
+      keyFrom(sendKey),
+      sendProfile.value,
+      repeatCount()
+    );
     const wav = wavEncode(signal);
     const blob = new Blob([wav], { type: "audio/wav" });
     const url = URL.createObjectURL(blob);
@@ -431,6 +452,7 @@ async function startListening() {
     silentGain.connect(micContext.destination);
 
     clearRing();
+    liveGuard = new ReplayGuard();
     listening = true;
     listenButton.textContent = "Detener";
     listenButton.classList.add("active");
@@ -459,18 +481,37 @@ listenButton.addEventListener("click", async () => {
   }
 });
 
+// Una guardia por sesion de escucha: recuerda las sesiones vistas mientras la pagina siga abierta.
+let liveGuard = new ReplayGuard();
+
 async function scanOnce() {
   const limit = Math.min(ringFilled, FS * SCAN_SECONDS);
   if (limit < CHIRP_LEN * 2) return;
   let windowSamples = getWindow(limit);
   if (captureRate !== FS) windowSamples = resampleLinear(windowSamples, captureRate, FS);
   let detected = false;
-  const message = await receive(windowSamples, keyFrom(receiveKey), (info) => {
-    if (info.detected) detected = true;
-  });
+  const key = keyFrom(receiveKey);
+  const guard = key !== null && replayCheck.checked ? liveGuard : null;
+  const message = await receive(
+    windowSamples,
+    key,
+    (info) => {
+      if (info.detected) detected = true;
+    },
+    guard
+  );
   if (message !== null) {
-    addMessage(message, "decodificado");
+    addMessage(message, key !== null ? "decodificado · cifrado" : "decodificado · sin cifrar");
     setStatus(receiveStatus, "Decodificado.", "ok");
+    clearRing();
+    return;
+  }
+  if (guard !== null && guard.lastReason !== null) {
+    const why =
+      guard.lastReason === "repetido"
+        ? "ya se había recibido (posible repetición)"
+        : "es antiguo o la hora de uno de los dispositivos no es correcta";
+    setStatus(receiveStatus, `Mensaje descartado: ${why}.`, "error");
     clearRing();
     return;
   }
@@ -500,9 +541,10 @@ wavFile.addEventListener("change", async () => {
   try {
     const bytes = new Uint8Array(await file.arrayBuffer());
     const signal = wavDecode(bytes);
-    const message = await receive(signal, keyFrom(receiveKey));
+    const key = keyFrom(receiveKey);
+    const message = await receive(signal, key);
     if (message !== null) {
-      addMessage(message, "WAV");
+      addMessage(message, key !== null ? "WAV · cifrado" : "WAV · sin cifrar");
       setStatus(receiveStatus, "WAV decodificado.", "ok");
     } else {
       setStatus(receiveStatus, "No se pudo decodificar el WAV. Revisa la clave.", "error");

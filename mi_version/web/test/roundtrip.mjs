@@ -122,7 +122,19 @@ for (const [file, keyText, expected] of fixtures) {
   await check("v2: ventana de tiempo", async () => {
     const guard = new ReplayGuard(60, () => Date.now() / 1000 + 3600);
     const signal = await send(message, key, "normal");
-    return (await receive(signal, key, null, guard)) === null;
+    return (await receive(signal, key, null, guard)) === null && guard.lastReason === "antiguo";
+  });
+  await check("v2: ReplayGuard informa el motivo del rechazo", async () => {
+    const guard = new ReplayGuard();
+    const signal = await send(message, key, "normal");
+    await receive(signal, key, null, guard);
+    const reasonAfterOk = guard.lastReason;
+    await receive(signal, key, null, guard);
+    return reasonAfterOk === null && guard.lastReason === "repetido";
+  });
+  await check("v2: repeat=3 con clave", async () => {
+    const result = await receive(await send(message, key, "normal", 3), key);
+    return result !== null && equalBytes(result, message);
   });
 }
 

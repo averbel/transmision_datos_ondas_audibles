@@ -34,7 +34,19 @@
         </div>
         <div class="field">
           <label for="send-key">Clave (opcional)</label>
-          <input id="send-key" type="password" autocomplete="off" spellcheck="false">
+          <input id="send-key" type="password" autocomplete="off" spellcheck="false" aria-describedby="key-hint">
+        </div>
+      </div>
+      <p id="key-hint" class="meta">Con clave el mensaje se cifra y se autentica. Usa una frase larga: una clave corta se puede adivinar por fuerza bruta. La clave no sale de tu navegador.</p>
+
+      <div class="field-row">
+        <div class="field">
+          <label for="send-repeat">Repeticiones</label>
+          <select id="send-repeat">
+            <option value="1">1 vez</option>
+            <option value="2">2 veces (tolera un bloque dañado)</option>
+            <option value="3">3 veces</option>
+          </select>
         </div>
       </div>
 
@@ -52,6 +64,12 @@
 
       <label for="receive-key">Clave (opcional)</label>
       <input id="receive-key" type="password" autocomplete="off" spellcheck="false">
+
+      <label class="check" for="replay-guard">
+        <input id="replay-guard" type="checkbox" checked>
+        Rechazar mensajes con clave repetidos o antiguos al escuchar
+      </label>
+      <p class="meta">Evita que alguien grabe un mensaje y lo reproduzca después. Exige que la hora de ambos dispositivos esté en hora (tolerancia de 2 minutos). No se aplica a los WAV cargados.</p>
 
       <div class="actions">
         <button id="listen" type="button" class="primary">Escuchar</button>
@@ -99,7 +117,8 @@
 
   <footer class="wrap site-footer">
     <p><strong>SpaceWases</strong> · Andrés Felipe Verbel Pacheco (CUC)</p>
-    <p>El mensaje no se cifra: la clave solo autentica la trama. Los resultados que no se hayan probado por aire son de simulación.</p>
+    <p>Sin clave el mensaje viaja en claro y cualquiera puede fabricar tramas válidas. Con clave se cifra y se autentica, pero la construcción es propia y no ha sido auditada: no la uses para información sensible. Cualquier micrófono cercano recibe la señal.</p>
+    <p>Los resultados de rendimiento son de simulación; la prueba real con altavoz y micrófono todavía no es concluyente.</p>
   </footer>
 
   <script type="module" src="app.js"></script>
