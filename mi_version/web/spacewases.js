@@ -21,8 +21,29 @@ export const SESSION_LEN = 10;
 export const HEADER_LEN_V2 = HEADER_LEN + SESSION_LEN;
 export const HMAC_LEN_V2 = 8;
 
-export function dataLen(chunk, keyed) {
-  return keyed ? HEADER_LEN_V2 + chunk + HMAC_LEN_V2 : HEADER_LEN + chunk + HMAC_LEN;
+// Bloque de longitud al inicio de cada transmision (igual que en frame.py): perfil y
+// longitud total protegidos por su propio Reed-Solomon; el ultimo fragmento no se rellena.
+export const LEN_MAGIC = 0xb0;
+export const LEN_DATA = 3;
+export const LEN_PARITY = 6;
+export const LEN_BLOCK = LEN_DATA + LEN_PARITY;
+const MAX_MESSAGE = 0xffff;
+
+// [bytes en claro, paridad] de cada fragmento de un mensaje de length bytes. La paridad
+// es la del perfil aunque el bloque sea corto (ver block_sizes en frame.py).
+export function blockSizes(length, keyed, chunk, parity) {
+  const head = keyed ? HEADER_LEN_V2 : HEADER_LEN;
+  const tag = keyed ? HMAC_LEN_V2 : HMAC_LEN;
+  const count = Math.max(1, Math.ceil(length / chunk));
+  const sizes = [];
+  for (let idx = 0; idx < count; idx++) {
+    sizes.push([head + Math.min(chunk, length - idx * chunk) + tag, parity]);
+  }
+  return sizes;
+}
+
+function sequenceLength(length, keyed, chunk, parity) {
+  return blockSizes(length, keyed, chunk, parity).reduce((n, [p, r]) => n + p + r, LEN_BLOCK);
 }
 
 // [id, chunk, paridad RS] de la capa de trama (igual que api.PROFILES en Python).
@@ -748,9 +769,7 @@ async function encodeFragment(msgId, fragIdx, fragTotal, payload, key, profileId
     const body = concatBytes([header, payload]);
     plain = concatBytes([body, await hmacTag(body, null)]);
   }
-  const out = new Uint8Array(dataLen(chunk, keyed));
-  out.set(plain, 0);
-  return out;
+  return plain;
 }
 
 async function parseFrame(plain, key) {
@@ -870,52 +889,80 @@ function nextMessageId() {
 
 async function packMessage(msg, key, profileId, chunk, parity, msgId = null, repeat = 1) {
   if (!Number.isInteger(repeat) || repeat < 1) throw new Error("repeat debe ser >= 1");
-  if (chunk <= 0 || chunk > 249) throw new Error("chunk invalido");
-  const total = Math.max(1, Math.ceil(msg.length / chunk));
-  if (total > 255) throw new Error("mensaje demasiado largo");
+  if (chunk <= 0 || chunk > 230) throw new Error("chunk invalido");
+  if (msg.length > MAX_MESSAGE || Math.ceil(msg.length / chunk) > 255) {
+    throw new Error("mensaje demasiado largo");
+  }
   const ident = msgId === null ? nextMessageId() : msgId & 0xff;
   const session = key === null ? null : newSession();
-  const blocks = [];
-  for (let idx = 0; idx < total; idx++) {
+  const header = Uint8Array.from([LEN_MAGIC | (profileId & 0x0f), msg.length >> 8, msg.length & 0xff]);
+  const blocks = [rsEncode(header, LEN_PARITY)];
+  const sizes = blockSizes(msg.length, key !== null, chunk, parity);
+  for (let idx = 0; idx < sizes.length; idx++) {
     const payload = msg.slice(idx * chunk, (idx + 1) * chunk);
-    const plain = await encodeFragment(ident, idx, total, payload, key, profileId, chunk, session);
-    blocks.push(rsEncode(plain, parity));
+    const plain = await encodeFragment(ident, idx, sizes.length, payload, key, profileId, chunk, session);
+    blocks.push(rsEncode(plain, sizes[idx][1]));
   }
   const once = concatBytes(blocks);
   return concatBytes(Array.from({ length: repeat }, () => once));
 }
 
-async function decodeStream(raw, key, profiles, guard = null) {
-  for (const [profileId, chunk, parity] of profiles) {
-    const blockLen = dataLen(chunk, key !== null) + parity;
-    const maxBlocks = Math.trunc(raw.length / blockLen);
-    if (maxBlocks === 0) continue;
-    const decoded = new Map();
+// Longitud del mensaje si el bloque de longitud en offset es valido para el perfil.
+function readLength(raw, offset, profileId) {
+  if (offset + LEN_BLOCK > raw.length) return null;
+  let header;
+  try {
+    header = rsDecode(raw.slice(offset, offset + LEN_BLOCK), LEN_PARITY);
+  } catch {
+    return null;
+  }
+  if (header[0] !== (LEN_MAGIC | (profileId & 0x0f))) return null;
+  return (header[1] << 8) | header[2];
+}
 
-    const blockFrame = async (i) => {
-      if (decoded.has(i)) return decoded.get(i);
-      let frame = null;
-      try {
-        const plain = rsDecode(raw.slice(i * blockLen, (i + 1) * blockLen), parity);
-        frame = await parseFragment(plain, key, profileId, chunk);
-      } catch {
-        frame = null;
+async function decodeStream(raw, key, profiles, guard = null) {
+  const keyed = key !== null;
+  for (const [profileId, chunk, parity] of profiles) {
+    // Si el bloque de longitud de la primera copia esta danado, prueba el de las
+    // demas suponiendo que raw son k copias exactas.
+    let length = null;
+    for (const k of [1, 2, 3]) {
+      const part = Math.trunc(raw.length / k);
+      if (k > 1 && raw.length % k) continue;
+      for (let copy = 0; copy < k && length === null; copy++) {
+        const found = readLength(raw, copy * part, profileId);
+        if (found !== null && (k === 1 || sequenceLength(found, keyed, chunk, parity) === part)) length = found;
       }
-      decoded.set(i, frame);
-      return frame;
-    };
+      if (length !== null) break;
+    }
+    if (length === null) continue;
+    const seq = sequenceLength(length, keyed, chunk, parity);
+    const sizes = blockSizes(length, keyed, chunk, parity);
 
     // Cada bloque se valida por separado: uno danado no descarta al resto, y si el
     // mensaje se envio repetido los fragmentos buenos de cualquier copia completan
     // los que faltan.
     const reassembler = new Reassembler();
-    for (let i = 0; i < maxBlocks; i++) {
-      const fragment = await blockFrame(i);
-      if (fragment === null) continue;
-      const result = reassembler.push(fragment);
-      if (result !== null) {
-        if (guard !== null && !guard.accept(fragment.session)) return null;
-        return result;
+    const copies = Math.max(1, Math.trunc(raw.length / seq));
+    for (let copy = 0; copy < copies; copy++) {
+      let offset = copy * seq + LEN_BLOCK;
+      for (const [plainLen, blockParity] of sizes) {
+        const end = offset + plainLen + blockParity;
+        if (end > raw.length) break;
+        const block = raw.slice(offset, end);
+        offset = end;
+        let fragment = null;
+        try {
+          fragment = await parseFragment(rsDecode(block, blockParity), key, profileId, chunk);
+        } catch {
+          fragment = null;
+        }
+        if (fragment === null) continue;
+        const result = reassembler.push(fragment);
+        if (result !== null) {
+          if (guard !== null && !guard.accept(fragment.session)) return null;
+          return result;
+        }
       }
     }
   }
@@ -935,8 +982,7 @@ export async function send(msg, key = null, profile = "normal", repeat = 1) {
 // Duracion en segundos de la senal que send() generaria (para la interfaz).
 export function signalSeconds(byteLength, profile, keyed = false, repeat = 1) {
   const [, chunk, parity] = PROFILES[profile];
-  const blocks = Math.max(1, Math.ceil(byteLength / chunk));
-  const symbols = repeat * blocks * (dataLen(chunk, keyed) + parity);
+  const symbols = repeat * sequenceLength(byteLength, keyed, chunk, parity);
   return (2 * CHIRP_LEN + 2 * GUARD + symbols * symbolLayout(FRAMES[profile]).period) / FS;
 }
 

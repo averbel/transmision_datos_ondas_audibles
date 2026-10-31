@@ -127,35 +127,56 @@ def test_sin_guardia_no_hay_proteccion():
     assert receive(signal, b"k") == b"x"
 
 
-def test_ventana_de_tiempo():
+def test_ventana_de_tiempo(monkeypatch):
     key = b"k"
+    profile = api.PROFILES["normal"]
     clock = {"now": 1_000_000.0}
     guard = frame.ReplayGuard(max_age=60, clock=lambda: clock["now"])
-    profile_id, chunk, parity = api.PROFILES["normal"]
-    session_viejo = frame.new_session(now=clock["now"] - 3600)
-    plain = frame.encode_fragment(1, 0, 1, b"viejo", key, profile_id, chunk, session_viejo)
-    raw = frame.rs.encode(plain, parity)
-    assert frame.decode_stream(raw, key, [api.PROFILES["normal"]]) == b"viejo"
-    assert frame.decode_stream(raw, key, [api.PROFILES["normal"]], guard) is None
-    fresh = frame.encode_fragment(1, 0, 1, b"nuevo", key, profile_id, chunk,
-                                  frame.new_session(now=clock["now"]))
-    raw = frame.rs.encode(fresh, parity)
-    assert frame.decode_stream(raw, key, [api.PROFILES["normal"]], guard) == b"nuevo"
+    real_session = frame.new_session
+
+    monkeypatch.setattr(frame, "new_session", lambda now=None: real_session(clock["now"] - 3600))
+    raw = frame.pack_message(b"viejo", key, *profile)
+    assert frame.decode_stream(raw, key, [profile]) == b"viejo"
+    assert frame.decode_stream(raw, key, [profile], guard) is None
+
+    monkeypatch.setattr(frame, "new_session", lambda now=None: real_session(clock["now"]))
+    raw = frame.pack_message(b"nuevo", key, *profile)
+    assert frame.decode_stream(raw, key, [profile], guard) == b"nuevo"
     clock["now"] += 3600
-    assert frame.decode_stream(raw, key, [api.PROFILES["normal"]], guard) is None
+    assert frame.decode_stream(raw, key, [profile], guard) is None
 
 
 def test_recuperacion_por_fragmento_con_repeticion():
     msg = _mensaje(100, seed=21)
     profile = api.PROFILES["normal"]
-    block_len = frame.data_len(profile[1], False) + profile[2]
+    first = sum(frame.block_sizes(len(msg), None, profile[1], profile[2])[0])
+    start = frame.LEN_BLOCK + first
     once = bytearray(frame.pack_message(msg, None, *profile))
     twice = bytearray(frame.pack_message(msg, None, *profile, repeat=2))
     for raw in (once, twice):
-        for i in range(block_len + 5, block_len + 25):
+        for i in range(start + 5, start + 25):
             raw[i] ^= 0xFF
     assert frame.decode_stream(bytes(once), None, [profile]) is None
     assert frame.decode_stream(bytes(twice), None, [profile]) == msg
+
+
+def test_bloque_de_longitud_danado_se_recupera_de_otra_copia():
+    msg = _mensaje(30, seed=23)
+    profile = api.PROFILES["fast"]
+    raw = bytearray(frame.pack_message(msg, None, *profile, repeat=2))
+    for i in range(frame.LEN_BLOCK):
+        raw[i] ^= 0x55
+    assert frame.decode_stream(bytes(raw), None, [profile]) == msg
+
+
+@pytest.mark.parametrize("size", [0, 1, 16, 47, 48, 49, 200])
+def test_mensajes_cortos_no_se_rellenan(size):
+    msg = _mensaje(size, seed=size + 1)
+    profile = api.PROFILES["robust"]
+    raw = frame.pack_message(msg, None, *profile)
+    sizes = frame.block_sizes(size, None, profile[1], profile[2])
+    assert len(raw) == frame.LEN_BLOCK + sum(p + r for p, r in sizes)
+    assert frame.decode_stream(raw, None, [profile]) == msg
 
 
 def test_repeat_invalido():

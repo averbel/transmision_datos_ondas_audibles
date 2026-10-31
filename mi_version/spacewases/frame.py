@@ -15,7 +15,9 @@ intento de decodificacion; el costo es que una frase debil sigue siendo debil. U
 repeticion es del receptor: ReplayGuard recuerda las sesiones vistas y su
 antiguedad; sin guardia, receive() es sin estado y acepta una trama grabada.
 
-Un mensaje es un solo flujo: si un bloque RS falla se descarta completo.
+La transmision empieza con un bloque de longitud y sigue con los fragmentos, sin
+relleno; cada bloque se valida por separado y, con repeat, los fragmentos buenos
+de cualquier copia completan el mensaje.
 """
 
 from __future__ import annotations
@@ -43,13 +45,6 @@ PBKDF2_ITERATIONS = 600_000
 
 _rng = random.SystemRandom()
 _last_id = -1
-
-
-def data_len(chunk: int, keyed: bool) -> int:
-    """Tamano en bytes del bloque en claro (antes de RS) para un chunk."""
-    if keyed:
-        return HEADER_LEN_V2 + chunk + HMAC_LEN_V2
-    return HEADER_LEN + chunk + HMAC_LEN
 
 
 def _next_msg_id() -> int:
@@ -100,7 +95,7 @@ def encode_fragment(msg_id: int, frag_idx: int, frag_total: int,
                     payload: bytes, key: bytes | None,
                     profile_id: int, chunk: int,
                     session: bytes | None = None) -> bytes:
-    """Devuelve el bloque en claro, rellenado a un tamano fijo.
+    """Devuelve el bloque en claro, sin relleno.
 
     Con clave genera una trama v2 cifrada; todos los fragmentos de un mensaje
     deben compartir session (pack_message la crea).
@@ -128,7 +123,7 @@ def encode_fragment(msg_id: int, frag_idx: int, frag_total: int,
     else:
         body = header + payload
         plain = body + _tag(body, None)
-    return plain + b"\x00" * (data_len(chunk, keyed) - len(plain))
+    return plain
 
 
 def parse_frame(plain: bytes, key: bytes | None) -> dict | None:
@@ -243,31 +238,75 @@ class Reassembler:
         return self.push(frame)
 
 
+# Cada transmision empieza con un bloque de longitud: perfil y longitud total del
+# mensaje, protegidos por su propio Reed-Solomon (idea tomada de ggwave). Con eso el
+# receptor conoce el tamano de cada bloque y el ultimo fragmento no se rellena.
+LEN_MAGIC = 0xB0
+LEN_DATA = 3
+LEN_PARITY = 6
+LEN_BLOCK = LEN_DATA + LEN_PARITY
+MAX_MESSAGE = 0xFFFF
+
+
+def block_sizes(length: int, key: bytes | None, chunk: int, parity: int) -> list[tuple[int, int]]:
+    """(bytes en claro, paridad) de cada fragmento de un mensaje de length bytes.
+
+    La paridad es la del perfil aunque el bloque sea corto: por aire, escalarla
+    con el tamano del bloque bajo el exito de normal y fast (106/180 frente a
+    142/180), porque el relleno de ceros que se quito casi nunca fallaba.
+    """
+    head, tag = (HEADER_LEN_V2, HMAC_LEN_V2) if key is not None else (HEADER_LEN, HMAC_LEN)
+    count = max(1, math.ceil(length / chunk))
+    sizes = []
+    for idx in range(count):
+        payload = min(chunk, length - idx * chunk)
+        sizes.append((head + payload + tag, parity))
+    return sizes
+
+
+def _sequence_length(length: int, key: bytes | None, chunk: int, parity: int) -> int:
+    return LEN_BLOCK + sum(p + r for p, r in block_sizes(length, key, chunk, parity))
+
+
 def pack_message(msg: bytes, key: bytes | None, profile_id: int,
                  chunk: int, parity: int, msg_id: int | None = None,
                  repeat: int = 1) -> bytes:
-    """Fragmenta, protege con RS y concatena los bloques listos para el modem.
+    """Bloque de longitud + fragmentos protegidos con RS, listos para el modem.
 
-    Con repeat > 1 la secuencia completa de bloques se envia varias veces
-    (misma sesion): el receptor reensambla con los fragmentos buenos de
-    cualquier copia.
+    Con repeat > 1 la secuencia completa se envia varias veces (misma sesion):
+    el receptor reensambla con los fragmentos buenos de cualquier copia.
     """
     if repeat < 1:
         raise ValueError("repeat debe ser >= 1")
-    if chunk <= 0 or chunk > 249:
+    if chunk <= 0 or chunk > 230:
         raise ValueError("chunk invalido")
-    total = max(1, math.ceil(len(msg) / chunk))
-    if total > 255:
+    if len(msg) > MAX_MESSAGE or math.ceil(len(msg) / chunk) > 255:
         raise ValueError("mensaje demasiado largo")
     ident = _next_msg_id() if msg_id is None else (msg_id & 0xFF)
     session = new_session() if key is not None else None
-    blocks = []
-    for idx in range(total):
+    header = bytes([LEN_MAGIC | (profile_id & 0x0F), len(msg) >> 8, len(msg) & 0xFF])
+    blocks = [rs.encode(header, LEN_PARITY)]
+    sizes = block_sizes(len(msg), key, chunk, parity)
+    for idx, (_, block_parity) in enumerate(sizes):
         payload = msg[idx * chunk:(idx + 1) * chunk]
-        plain = encode_fragment(ident, idx, total, payload, key, profile_id,
+        plain = encode_fragment(ident, idx, len(sizes), payload, key, profile_id,
                                 chunk, session)
-        blocks.append(rs.encode(plain, parity))
+        blocks.append(rs.encode(plain, block_parity))
     return b"".join(blocks) * repeat
+
+
+def _read_length(raw: bytes, offset: int, profile_id: int) -> int | None:
+    """Longitud del mensaje si el bloque de longitud en offset es valido para el perfil."""
+    block = raw[offset:offset + LEN_BLOCK]
+    if len(block) < LEN_BLOCK:
+        return None
+    try:
+        header = rs.decode(block, LEN_PARITY)
+    except ValueError:
+        return None
+    if header[0] != LEN_MAGIC | (profile_id & 0x0F):
+        return None
+    return (header[1] << 8) | header[2]
 
 
 def decode_stream(raw: bytes, key: bytes | None,
@@ -278,32 +317,46 @@ def decode_stream(raw: bytes, key: bytes | None,
     Con guard, un mensaje con clave repetido o fuera de ventana devuelve None.
     """
     for profile_id, chunk, parity in profiles:
-        block_len = data_len(chunk, key is not None) + parity
-        max_blocks = len(raw) // block_len
-        if max_blocks == 0:
+        # Si el bloque de longitud de la primera copia esta danado, prueba el de
+        # las demas suponiendo que raw son k copias exactas.
+        length = None
+        for k in (1, 2, 3):
+            part = len(raw) // k
+            if k > 1 and len(raw) % k:
+                continue
+            for copy in range(k):
+                found = _read_length(raw, copy * part, profile_id)
+                if found is not None and (k == 1 or _sequence_length(found, key, chunk, parity) == part):
+                    length = found
+                    break
+            if length is not None:
+                break
+        if length is None:
             continue
-        decoded: dict[int, dict | None] = {}
-
-        def block_frame(i: int) -> dict | None:
-            if i not in decoded:
-                try:
-                    plain = rs.decode(raw[i * block_len:(i + 1) * block_len], parity)
-                    decoded[i] = parse_fragment(plain, key, profile_id, chunk)
-                except ValueError:
-                    decoded[i] = None
-            return decoded[i]
+        seq = _sequence_length(length, key, chunk, parity)
+        sizes = block_sizes(length, key, chunk, parity)
 
         # Cada bloque se valida por separado: uno danado no descarta al resto, y
         # si el mensaje se envio repetido los fragmentos buenos de cualquier
         # copia completan los que faltan.
         reassembler = Reassembler()
-        for i in range(max_blocks):
-            fragment = block_frame(i)
-            if fragment is None:
-                continue
-            result = reassembler.push(fragment)
-            if result is not None:
-                if guard is not None and not guard.accept(fragment["session"]):
-                    return None
-                return result
+        for copy in range(max(1, len(raw) // seq)):
+            offset = copy * seq + LEN_BLOCK
+            for plain_len, block_parity in sizes:
+                block = raw[offset:offset + plain_len + block_parity]
+                offset += plain_len + block_parity
+                if len(block) < plain_len + block_parity:
+                    break
+                try:
+                    plain = rs.decode(block, block_parity)
+                except ValueError:
+                    continue
+                fragment = parse_fragment(plain, key, profile_id, chunk)
+                if fragment is None:
+                    continue
+                result = reassembler.push(fragment)
+                if result is not None:
+                    if guard is not None and not guard.accept(fragment["session"]):
+                        return None
+                    return result
     return None

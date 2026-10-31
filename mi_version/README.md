@@ -37,21 +37,21 @@ La clave opcional se pasa con `--key` o, mejor, con la variable de entorno `SPAC
 
 ## Resultados
 
-**Por aire** (`aire_2026-10-31_tramas.csv`): altavoz y micrófono integrados de un portátil, una sala, volumen del sistema fijo, mensaje de 16 B, 10 ensayos por punto; la ganancia digital baja la señal emitida.
+**Por aire** (`aire_2026-10-31_longitud_b.csv`): altavoz y micrófono integrados de un portátil, una sala, volumen del sistema fijo, mensaje de 16 B, 10 ensayos por punto; la ganancia digital baja la señal emitida.
 
 | Ganancia | robust | normal | fast |
 |---|---|---|---|
-| 1,0 | 8/10 | 6/10 | 9/10 |
-| 0,5 | 9/10 | 10/10 | 9/10 |
-| 0,25 | 8/10 | 9/10 | 9/10 |
+| 1,0 | 10/10 | 6/10 | 8/10 |
+| 0,5 | 10/10 | 7/10 | 8/10 |
+| 0,25 | 10/10 | 8/10 | 9/10 |
 | 0,12 | 10/10 | 10/10 | 10/10 |
-| 0,06 | 10/10 | 9/10 | 9/10 |
-| 0,03 | 2/10 | 3/10 | 2/10 |
-| **Total** | **47/60** | **47/60** | **48/60** |
+| 0,06 | 9/10 | 10/10 | 10/10 |
+| 0,03 | 5/10 | 9/10 | 8/10 |
+| **Total** | **54/60** | **50/60** | **53/60** |
 
-Con el diseño anterior (símbolos de una trama) la misma prueba dio 7/60, 1/60 y 1/60 (`aire_2026-10-31.csv`); el diagnóstico está en `diagnostico_aire/`. Es un solo equipo y una sala: falta repetirlo en otros.
+Evolución en la misma prueba: símbolos de una trama 9/180 (`aire_2026-10-31.csv`), símbolos de varias tramas con bloques rellenos 142/180 (`aire_2026-10-31_tramas.csv`) y sin relleno 157/180. Una variante sin relleno con paridad proporcional al bloque dio 106/180 (`aire_2026-10-31_longitud.csv`) y se descartó. El diagnóstico está en `diagnostico_aire/`. Es un solo equipo y una sala: falta repetirlo en otros.
 
-**Simulación con ruido blanco** (16 B, 100 intentos por punto, semilla fija; `bench_resultados.csv` y `bench_bps.csv`): los tres perfiles decodifican el 100 % desde −12 dB, el piso del banco. Tasa neta con 16 B: robust 12,4 bps, normal 21,1 y fast 24,1; cada bloque se rellena a 48 B, así que los mensajes cortos pagan el bloque entero. No se comparó con ggwave en las mismas condiciones.
+**Simulación con ruido blanco** (16 B, 100 intentos por punto, semilla fija; `bench_resultados.csv` y `bench_bps.csv`): los tres perfiles decodifican el 100 % desde −12 dB, el piso del banco. Tasa neta con 16 B: robust 17,4 bps, normal 27,8 y fast 33,4 (antes, con bloques rellenos a 48 B: 12,4 / 21,1 / 24,1). No se comparó con ggwave en las mismas condiciones.
 
 ## Límites conocidos
 
