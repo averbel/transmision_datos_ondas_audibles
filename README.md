@@ -10,7 +10,7 @@ abierto [ggwave](https://github.com/ggerganov/ggwave).
 
 | Carpeta | Qué hay |
 |---|---|
-| `paper/` | Artículo en formato IEEE de dos columnas: `Articulo_IEEE_Transmision_ondas_audibles.pdf`, su fuente `articulo.html`, las figuras y `make_figures.py`. |
+| `paper/` | Artículo en formato IEEE de dos columnas: `Articulo_IEEE_Transmision_ondas_audibles.pdf`, su fuente `articulo.html`, las figuras y `make_figures.py`. `Informe_hallazgos_y_mejoras.pdf` reúne aparte los errores encontrados y cómo se mejoraron. |
 | `mi_version/` | **SpaceWases**, módem acústico propio en Python con pruebas, benchmark y diagnóstico por aire. Ver `mi_version/README.md`. |
 | `mi_version/web/` | La web publicada: port exacto del módem a JavaScript, sin dependencias, con sus pruebas en `web/test/`. |
 | `experimentos/ggwave_bench/` | Banco de pruebas en C++ (canal con ruido blanco gaussiano simulado) y resultados en CSV. |

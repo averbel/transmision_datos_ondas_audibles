@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>SpaceWases: hallazgos, errores y mejoras</title>
+<style>
+  @page { size: Letter; margin: 0.8in 0.75in 0.85in 0.75in;
+          @bottom-center { content: counter(page); font: 8pt "Times New Roman", serif; } }
+  html { font-family: "Times New Roman", Times, serif; font-size: 10.5pt; color: #000; background: #fff; }
+  body { margin: 0 auto; max-width: 7in; line-height: 1.25; }
+  header { text-align: center; margin-bottom: 14pt; }
+  h1 { font-size: 20pt; font-weight: normal; line-height: 1.1; margin: 0 0 6pt; }
+  .author { font-size: 11pt; margin: 0; }
+  .aff { font-size: 9pt; font-style: italic; margin: 0; }
+  h2 { font-size: 12pt; margin: 15pt 0 5pt; break-after: avoid; }
+  p { margin: 0 0 6pt; }
+  ul { margin: 0 0 6pt; padding-left: 1.3em; }
+  li { margin-bottom: 3pt; }
+  table { border-collapse: collapse; width: 100%; font-size: 8.8pt; line-height: 1.18; margin: 4pt 0 8pt; }
+  thead { display: table-header-group; }
+  tr { break-inside: avoid; }
+  th { text-align: left; font-weight: bold; border-top: 1pt solid #000; border-bottom: 0.6pt solid #000; padding: 3pt 4pt; vertical-align: bottom; }
+  td { padding: 3.5pt 4pt; vertical-align: top; border-bottom: 0.3pt solid #999; }
+  tbody tr:last-child td { border-bottom: 1pt solid #000; }
+  td.n, th.n { text-align: center; white-space: nowrap; }
+  .tipo { font-size: 7.6pt; font-weight: bold; white-space: nowrap; }
+  .nota { font-size: 8.8pt; }
+  code { font-family: "Courier New", monospace; font-size: 8.3pt; }
+  .col-a { width: 25%; } .col-b { width: 28%; } .col-c { width: 25%; } .col-d { width: 22%; }
+  .aviso { border: 0.8pt solid #000; padding: 6pt 8pt; margin: 8pt 0; break-inside: avoid; }
+  .aviso p:last-child { margin-bottom: 0; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>SpaceWases: hallazgos, errores y mejoras</h1>
+  <p class="author">Andrés Felipe Verbel Pacheco</p>
+  <p class="aff">Universidad de la Costa (CUC), Barranquilla, Colombia &middot; averbel1@cuc.edu.co &middot; 1 de noviembre de 2026</p>
+</header>
+
+<p>Este informe complementa el artículo <i>Transmisión de datos mediante ondas audibles</i> y reúne lo que fallaba en el módem y en la web, cómo se detectó, qué se cambió y qué resultado dio. También recoge lo que se probó y se descartó, y lo que sigue sin resolver.</p>
+
+<p>El resultado central: la primera versión funcionaba en simulación, pero por aire solo recibió 9 de 180 mensajes. La causa principal fue la reverberación de la sala, y con símbolos más largos, como los de ggwave, y otros ajustes llegó a 157 de 180. Después, al probar la web entre dos dispositivos, aparecieron pérdidas intermitentes de mensajes, y se corrigieron varios fallos del receptor en el navegador.</p>
+
+<div class="aviso">
+  <p><b>Límite principal.</b> Todas las series por aire usan un solo portátil y una sala. Entre dos dispositivos reales solo hubo pruebas informales, sin cifras y anteriores a las correcciones del navegador. Por eso los fallos de la sección 4 son causas comprobadas de pérdida de mensajes, pero no se ha demostrado que expliquen las pérdidas observadas en esas pruebas.</p>
+</div>
+
+<p class="nota"><b>Tipo de evidencia.</b> <span class="tipo">AIRE</span>: altavoz y micrófono reales del portátil. <span class="tipo">SIM</span>: simulación por programa. <span class="tipo">NAV</span>: navegador real con un micrófono simulado. <span class="tipo">CÓDIGO</span>: revisión o medición del código, sin audio.</p>
+
+<h2>1. Resumen de resultados</h2>
+<table>
+<thead><tr><th style="width:40%">Indicador</th><th>Antes</th><th>Después</th><th class="n">Evidencia</th></tr></thead>
+<tbody>
+<tr><td>Mensajes recibidos (16 B, 180 ensayos)</td><td>9 de 180</td><td>157 de 180</td><td class="n"><span class="tipo">AIRE</span></td></tr>
+<tr><td>Acierto de byte antes de Reed&ndash;Solomon</td><td>0,44 (1 trama)</td><td>0,86 (3 tramas); 0,93&ndash;0,95 (6 tramas)</td><td class="n"><span class="tipo">AIRE</span></td></tr>
+<tr><td>Tasa neta con 16 B (Robusto / Normal / Rápido)</td><td>12,4 / 21,1 / 24,1 bps</td><td>17,4 / 27,8 / 33,4 bps</td><td class="n"><span class="tipo">SIM</span></td></tr>
+<tr><td>Dos mensajes con audio en trozos de 1 a 4 s</td><td>0 de 2</td><td>2 de 2</td><td class="n"><span class="tipo">SIM</span></td></tr>
+<tr><td>Tres mensajes con la página bloqueada</td><td>2 de 3 (bloqueo de 1,5 s)</td><td>3 de 3 (dos bloqueos de 3 s)</td><td class="n"><span class="tipo">NAV</span></td></tr>
+<tr><td>Micrófono a 16 kHz, remuestreado por lotes</td><td>0 de 6 casos</td><td>Decodifica</td><td class="n"><span class="tipo">SIM</span></td></tr>
+<tr><td>Buscar el chirp en 90 s de audio</td><td>6,5 s</td><td>0,77 s</td><td class="n"><span class="tipo">CÓDIGO</span></td></tr>
+<tr><td>Contraste del texto de los botones</td><td>3,96:1</td><td>5,93:1</td><td class="n"><span class="tipo">CÓDIGO</span></td></tr>
+</tbody>
+</table>
+<p class="nota">La fila del bloqueo no compara condiciones iguales: el resultado de después se obtuvo con bloqueos más largos, es decir, más exigentes. Los tiempos se midieron en el portátil de pruebas; en un móvil serán mayores.</p>
+
+<h2>2. Canal por aire</h2>
+<table>
+<thead><tr><th class="col-a">Hallazgo o error</th><th class="col-b">Evidencia</th><th class="col-c">Mejora</th><th class="col-d">Resultado</th></tr></thead>
+<tbody>
+<tr><td>El módem pasaba la simulación, pero fallaba por aire.</td><td><span class="tipo">AIRE</span> 9 de 180 (7, 1 y 1 de 60 por perfil). El éxito no subía con la ganancia: en Robusto, 3 de 10 a ganancia 0,03 y 1 de 10 a 1,0. El ruido no lo explicaba.</td><td>Diagnóstico por pasos con scripts en <code>diagnostico_aire/</code>.</td><td>Causas acotadas: ver las filas siguientes.</td></tr>
+<tr><td>Reverberación más larga que el prefijo cíclico: cada símbolo se contaminaba con el anterior.</td><td><span class="tipo">AIRE</span> 54 de 116 nibbles erróneos (47 %) copiaban el símbolo anterior; al azar serían unos 8.</td><td>Símbolos de varias tramas: la primera hace de guarda y el receptor suma el resto (6 tramas en Robusto, 3 en Normal y Rápido). Idea tomada de ggwave.</td><td><span class="tipo">AIRE</span> De 9 a 142 de 180.</td></tr>
+<tr><td>Canal irregular en frecuencia: unos tonos llegan y otros casi no.</td><td><span class="tipo">AIRE</span> Respuesta que cae 10&ndash;30 dB por encima de 1 kHz. Acierto del 100 % entre 1,9 y 2,6 kHz, pero del 8&ndash;22 % en varios tonos de 3,3 a 6,1 kHz.</td><td>Sin corrección específica. Los símbolos largos lo compensan en parte; la ecualización casi no ayudó.</td><td><b>Parcial.</b> Sigue siendo un límite del diseño.</td></tr>
+<tr><td>Sospechas que resultaron no ser la causa.</td><td><span class="tipo">AIRE</span> MME, DirectSound y WASAPI fallaron igual (16&ndash;29 de 78 bytes). Deriva de reloj de 0 a &minus;9 ppm. Ventana de análisis bien alineada.</td><td>Ninguna: se descartaron.</td><td>Se evitó cambiar lo que no fallaba.</td></tr>
+<tr><td>Dudas sobre la diferencia de reloj entre dos dispositivos.</td><td><span class="tipo">SIM</span> A 5 dB, con 16 y 150 B y 4 ensayos por punto: todo decodifica entre &minus;200 y +200 ppm. Solo falla Robusto con 150 B a 400 ppm.</td><td>Ninguna: no hace falta seguir el reloj.</td><td>Causa descartada, solo en simulación.</td></tr>
+</tbody>
+</table>
+
+<h2>3. Formato de la señal</h2>
+<table>
+<thead><tr><th class="col-a">Hallazgo o error</th><th class="col-b">Evidencia</th><th class="col-c">Mejora</th><th class="col-d">Resultado</th></tr></thead>
+<tbody>
+<tr><td>Los bloques se rellenaban hasta 48 B, así que los mensajes cortos duraban de más.</td><td><span class="tipo">SIM</span> Tasa con 16 B de 12,4 / 21,1 / 24,1 bps.</td><td>Bloque de longitud con su propio Reed&ndash;Solomon (3 + 6 bytes) y fragmentos sin relleno, con la paridad completa del perfil.</td><td><span class="tipo">AIRE</span> De 142 a 157 de 180. <span class="tipo">SIM</span> 17,4 / 27,8 / 33,4 bps.</td></tr>
+<tr><td>El chirp no siempre daba la posición exacta de los símbolos.</td><td><span class="tipo">AIRE</span> 44 de 45 grabaciones decodificadas.</td><td>Si no decodifica, el receptor prueba la ventana desplazada &minus;256, &minus;512 y +256 muestras.</td><td><span class="tipo">AIRE</span> 45 de 45, sobre las mismas grabaciones.</td></tr>
+<tr><td>Error propio en esa búsqueda: la cuenta de símbolos ignoraba el desplazamiento.</td><td><span class="tipo">CÓDIGO</span> Encontrado al revisar.</td><td>Cuenta corregida en Python y JavaScript, con prueba.</td><td>La medida de 45 de 45 es anterior a esta corrección, que solo afecta a los intentos desplazados.</td></tr>
+</tbody>
+</table>
+
+<h2>4. Recepción en el navegador</h2>
+<p>Estos fallos aparecieron al investigar las pérdidas intermitentes entre dos dispositivos. Ninguno se veía en las pruebas del módem, porque están en cómo llega el audio a la página.</p>
+<table>
+<thead><tr><th class="col-a">Hallazgo o error</th><th class="col-b">Evidencia</th><th class="col-c">Mejora</th><th class="col-d">Resultado</th></tr></thead>
+<tbody>
+<tr><td>El receptor solo miraba el final de cada trozo de audio. Si la página iba lenta, el chirp de inicio se descartaba y el mensaje se perdía sin aviso.</td><td><span class="tipo">SIM</span> Dos mensajes: 2 de 2 con trozos de 0,2 s, 1 de 2 con 0,5 s y 0 de 2 con 1 s o más.</td><td>Revisa todo el audio nuevo en ventanas solapadas y en orden. En un trozo caben varios mensajes.</td><td><span class="tipo">SIM</span> 2 de 2 con trozos de 0,2 a 4 s.</td></tr>
+<tr><td>La captura con <code>ScriptProcessor</code> corre en el hilo de la página y pierde audio si este se bloquea.</td><td><span class="tipo">NAV</span> Sin bloqueo, 3 de 3. Con un bloqueo de 1,5 s se perdió el mensaje Normal.</td><td>Captura con <code>AudioWorklet</code>, en el hilo de audio, con cola. <code>ScriptProcessor</code> queda como respaldo.</td><td><span class="tipo">NAV</span> 3 de 3 con dos bloqueos de 3 s. También 3 de 3 en la web publicada, con un bloqueo de 3 s.</td></tr>
+<tr><td>Buscar el chirp con una sola FFT de toda la grabación congelaba la página.</td><td><span class="tipo">CÓDIGO</span> 6,5 s sobre 90 s de audio; una decodificación fallida de 90 s, 10,6 s; un mensaje Robusto de 36 s, 1,9 s.</td><td>Correlación por bloques de 65&nbsp;536 muestras (solapar y guardar), con posición exacta comprobada en las fronteras.</td><td><span class="tipo">CÓDIGO</span> 0,77 s, 1,8 s y 0,5 s, respectivamente.</td></tr>
+<tr><td>Con un micrófono que no trabaja a 48 kHz, cada lote se remuestreaba por separado y se perdía la fase.</td><td><span class="tipo">SIM</span> A 16 kHz no decodificó ninguno de 6 casos. A 44,1 kHz, sin ruido, sí.</td><td>Remuestreador continuo entre trozos, y uso de la frecuencia del sistema si el navegador rechaza 48 kHz.</td><td><span class="tipo">SIM</span> Decodifica a 16 y 44,1 kHz. El respaldo para Firefox no se probó en Firefox.</td></tr>
+<tr><td>En el móvil, al apagarse la pantalla el navegador puede cortar el micrófono.</td><td>Riesgo conocido; no se midió en un móvil real.</td><td>La web pide mantener la pantalla encendida mientras escucha y avisa si pasa a segundo plano.</td><td><span class="tipo">NAV</span> Se pide y se suelta bien. Falta confirmarlo en un móvil.</td></tr>
+<tr><td>Un mensaje que no se decodificaba apenas dejaba rastro.</td><td><span class="tipo">CÓDIGO</span> Solo cambiaba la línea de estado.</td><td>Los fallos y rechazos quedan en el historial, con una sugerencia.</td><td>Permite distinguir si los tonos llegaron dañados (línea roja) o si no se detectó el inicio (nada).</td></tr>
+</tbody>
+</table>
+
+<h2>5. Seguridad y validación de datos</h2>
+<table>
+<thead><tr><th class="col-a">Hallazgo o error</th><th class="col-b">Evidencia</th><th class="col-c">Mejora</th><th class="col-d">Resultado</th></tr></thead>
+<tbody>
+<tr><td>El mensaje viajaba sin cifrar y no había protección contra la reproducción de una grabación.</td><td><span class="tipo">CÓDIGO</span> Revisión del formato de trama.</td><td>Con clave: cifrado HMAC-SHA256 en modo contador, etiqueta de 8 bytes y sesión con marca de tiempo y nonce. <code>ReplayGuard</code> opcional, con ventana de 120 s.</td><td>Mismo resultado en Python y JavaScript. La construcción es propia y no la ha auditado un tercero.</td></tr>
+<tr><td>Una clave débil se podía atacar por fuerza bruta con facilidad.</td><td><span class="tipo">CÓDIGO</span> La clave se usaba sin derivación lenta.</td><td>PBKDF2-HMAC-SHA256 con 600 000 iteraciones.</td><td>Vector común en las pruebas de ambos lenguajes. Una frase débil sigue siendo débil.</td></tr>
+<tr><td><code>ReplayGuard</code> en JavaScript conservaba el motivo del rechazo anterior.</td><td><span class="tipo">CÓDIGO</span> Encontrado en pruebas.</td><td>El motivo se reinicia en cada recepción.</td><td>Corregido.</td></tr>
+<tr><td>Se aceptaban archivos WAV con cabeceras incoherentes o de tamaño ilimitado.</td><td><span class="tipo">CÓDIGO</span> Auditoría antes de publicar.</td><td>Se rechazan los WAV que no son PCM o tienen la cabecera incoherente, y los de más de 100 MB.</td><td>Tres pruebas nuevas.</td></tr>
+<tr><td>Una web pública necesitaba cabeceras de seguridad.</td><td><span class="tipo">CÓDIGO</span> Auditoría antes de publicar.</td><td>Política de contenido, página no incrustable, <code>nosniff</code>, sin <i>referrer</i> y micrófono solo para el propio sitio.</td><td>Comprobadas en producción.</td></tr>
+</tbody>
+</table>
+<p>Las dos auditorías no encontraron inyección de código: el texto recibido se muestra siempre como texto. Sigue vigente que, sin clave, cualquiera puede fabricar mensajes; la página lo avisa.</p>
+
+<h2>6. Interfaz</h2>
+<table>
+<thead><tr><th class="col-a">Hallazgo o error</th><th class="col-b">Evidencia</th><th class="col-c">Mejora</th><th class="col-d">Resultado</th></tr></thead>
+<tbody>
+<tr><td>Texto de los botones con poco contraste.</td><td><span class="tipo">CÓDIGO</span> 3,96:1, mínimo WCAG de 4,5:1. Los otros 13 pares cumplían.</td><td>Verde más oscuro.</td><td>5,93:1.</td></tr>
+<tr><td>El navegador usaba un JavaScript viejo guardado en caché.</td><td>Visto al probar la web.</td><td>Archivos con versión (<code>?v=</code>), que se cambia al publicar.</td><td>Carga siempre la versión publicada, si se cambia la versión.</td></tr>
+<tr><td>Dos errores de estilo tras rehacer la interfaz: el botón Detener se veía estando oculto y la pestaña activa perdía su color al pasar el ratón.</td><td><span class="tipo">NAV</span> Vistos en la revisión con capturas.</td><td>Reglas de CSS corregidas.</td><td>Corregido en escritorio y móvil.</td></tr>
+<tr><td>El protocolo por defecto, Normal, equivalía al más rápido de ggwave.</td><td><span class="tipo">AIRE</span> Robusto 54, Normal 50 y Rápido 53 de 60. Con tan pocos ensayos, la diferencia es pequeña.</td><td>Robusto por defecto, con 6 tramas, igual que el modo por defecto de Waver.</td><td>Más lento: 16 B tardan 7,4 s, frente a 4,6 s.</td></tr>
+</tbody>
+</table>
+
+<h2>7. Soluciones probadas y descartadas</h2>
+<table>
+<thead><tr><th style="width:30%">Solución</th><th style="width:40%">Qué pasó</th><th>Decisión</th></tr></thead>
+<tbody>
+<tr><td>Paridad proporcional al tamaño del bloque</td><td><span class="tipo">AIRE</span> 106 de 180 (Robusto 52, Normal 33, Rápido 21), peor que los 142 anteriores.</td><td>Revertida. Se pasó a la paridad completa (157).</td></tr>
+<tr><td>Restar la cola del símbolo anterior (DFE)</td><td><span class="tipo">AIRE</span> Nibble de ~72 a ~85 %. <span class="tipo">SIM</span> A &minus;10 dB, Robusto bajó de 100 a 62 % y Normal de 100 a 3 %.</td><td>Descartada: ayudaba en esta sala y perjudicaba con ruido.</td></tr>
+<tr><td>Alargar el prefijo cíclico</td><td><span class="tipo">AIRE</span> Acierto de byte de 0,35 sin prefijo a 0,50 (256), 0,52 (512), 0,28 (1024, sin explicar), 0,70 (2048) y 0,72 (4096).</td><td>Insuficiente. Se optó por varias tramas.</td></tr>
+<tr><td>Normalizar la ganancia de cada tono</td><td><span class="tipo">AIRE</span> Nibble de 72 a 72&ndash;82 %.</td><td>Descartada: poca mejora.</td></tr>
+<tr><td>Diversidad: el mismo dato en los dos grupos de tonos</td><td><span class="tipo">AIRE</span> Nibble de 0,81 a 0,90, pero con la mitad de bits por símbolo.</td><td>No adoptada.</td></tr>
+</tbody>
+</table>
+
+<h2>8. Errores de método y de proceso</h2>
+<ul>
+<li><b>Fiarse de la simulación.</b> El 100 % con ruido blanco no anticipaba el 5 % por aire, porque ese ruido no modela la reverberación. Se añadió a las pruebas un modelo de cola de sala, además de medir por aire.</li>
+<li><b>Serie por aire incompleta.</b> La serie de <code>aire_resultados.csv</code> quedó en 168 de 180 ensayos y en condiciones no controladas, y no se usa como resultado.</li>
+<li><b>Grabaciones que no valen como prueba.</b> Una grabación a ganancia 0,25 salió casi en silencio (RMS 0,002, chirp por debajo del umbral), y otra usaba el formato anterior al bloque de longitud. Ninguna se contó. Con ganancia 1,0, una grabación nueva dio 3 de 3 con el receptor en flujo, aunque con nivel bajo (RMS ~0,004).</li>
+<li><b>Proyecto de más en Vercel.</b> Al vincular desde la carpeta equivocada se creó el proyecto <code>averbels-projects/repo</code>, conectado a GitHub. Se desconectó GitHub en los dos proyectos antes de que se publicara nada, y se comprobó que no había despliegues. Falta borrarlo a mano.</li>
+<li><b>Afirmaciones corregidas al revisar.</b> Un borrador del artículo decía que ninguna causa de pérdida era del canal, algo que no se midió. Y las notas decían que Waver usa por defecto su modo más largo: el código muestra que usa <i>Audible Fast</i>, de 6 tramas, como Robusto. La decisión se mantiene.</li>
+</ul>
+
+<h2>9. Lo que sigue sin resolver</h2>
+<ul>
+<li><b>Serie medida entre dos dispositivos reales.</b> Es lo más importante: por ejemplo, 20 mensajes por protocolo a una distancia fija, con esta versión.</li>
+<li><b>Otros equipos y salas.</b> El número de tramas y la paridad se eligieron con mediciones de un solo equipo y pueden estar ajustados a él.</li>
+<li><b>Tonos con mala respuesta.</b> No hay ecualización ni selección adaptativa de tonos.</li>
+<li><b>Procesado de audio del móvil.</b> El navegador puede aplicar supresión de ruido aunque la página pida desactivarla. No se ha medido.</li>
+<li><b>Falsas detecciones.</b> Un ruido parecido al chirp deja el receptor grabando hasta 90 s. No se midió con qué frecuencia ocurre ni qué pasa con un mensaje real que llegue entretanto.</li>
+<li><b>Tasa.</b> SpaceWases transmite 1 byte por símbolo y ggwave 3. No se ha comparado con ggwave por aire en el mismo equipo, así que no se afirma ninguna ventaja.</li>
+</ul>
+
+<h2>10. Dónde verificarlo</h2>
+<table>
+<thead><tr><th style="width:42%">Material</th><th>Contenido</th></tr></thead>
+<tbody>
+<tr><td><code>mi_version/aire_2026-10-31*.csv</code></td><td>Datos de las series por aire y de la búsqueda de alineación</td></tr>
+<tr><td><code>mi_version/diagnostico_aire/</code></td><td>Scripts del diagnóstico por aire</td></tr>
+<tr><td><code>mi_version/tests/</code> y <code>mi_version/web/test/</code></td><td>46 pruebas en Python y 63 en JavaScript</td></tr>
+<tr><td><code>CONTINUAR.md</code></td><td>Registro detallado, en orden cronológico</td></tr>
+<tr><td>https://spacewases.vercel.app</td><td>Web publicada, con estas correcciones</td></tr>
+</tbody>
+</table>
+
+</body>
+</html>
