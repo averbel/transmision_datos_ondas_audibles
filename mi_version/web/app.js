@@ -10,7 +10,7 @@ import {
   signalSeconds,
   StreamReceiver,
   Resampler,
-} from "./spacewases.js?v=20261031e";
+} from "./spacewases.js?v=20261031f";
 
 const PROFILE_LABELS = {
   robust: "Robusto",
@@ -367,8 +367,36 @@ function takePendingAudio() {
   return out;
 }
 
+// En el móvil, si la pantalla se apaga el navegador corta el micrófono y se pierden
+// mensajes: mientras se escucha se pide mantenerla encendida (si el navegador lo
+// permite). El bloqueo se suelta solo al ocultar la página y se vuelve a pedir al volver.
+let wakeLock = null;
+
+async function keepScreenOn() {
+  if (!listening || wakeLock || !navigator.wakeLock || document.visibilityState !== "visible") return;
+  try {
+    wakeLock = await navigator.wakeLock.request("screen");
+    wakeLock.addEventListener("release", () => {
+      wakeLock = null;
+    });
+  } catch {
+    wakeLock = null;
+  }
+}
+
+function releaseScreen() {
+  if (wakeLock) wakeLock.release().catch(() => {});
+  wakeLock = null;
+}
+
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") keepScreenOn();
+  else if (listening) setRxStatus("Página en segundo plano: puede que el navegador pause el micrófono.", "error");
+});
+
 function stopListening() {
   listening = false;
+  releaseScreen();
   if (scanTimer) {
     window.clearTimeout(scanTimer);
     scanTimer = 0;
@@ -446,7 +474,7 @@ async function startListening() {
     // ocupada; ScriptProcessor queda para navegadores sin AudioWorklet.
     if (micContext.audioWorklet && window.AudioWorkletNode) {
       try {
-        await micContext.audioWorklet.addModule("captura.js?v=20261031e");
+        await micContext.audioWorklet.addModule("captura.js?v=20261031f");
         processorNode = new AudioWorkletNode(micContext, "captura", { outputChannelCount: [1] });
         processorNode.port.onmessage = (event) => onAudio(event.data);
       } catch {
@@ -466,6 +494,7 @@ async function startListening() {
     clearLiveAudio();
     liveGuard = new ReplayGuard();
     listening = true;
+    keepScreenOn();
     listenButton.textContent = "Apagar micrófono";
     listenButton.classList.add("active");
     dotSpectrum.className = "dot dot-on";
