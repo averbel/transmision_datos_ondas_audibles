@@ -38,6 +38,7 @@ El repositorio es privado: inicia sesión con la cuenta GitHub `averbel` (no `An
    - *Por aire* (`C:\t\secuencia_v3.f32`, salida 4 y entrada 1 de este portátil, ganancia 1,0, volumen del sistema como estaba): el receptor en flujo decodificó 3 de 3, aunque el nivel captado es bajo (RMS ~0,004 con ruido ~0,003). La grabación anterior a ganancia 0,25 salió casi en silencio.
    - Pendiente: repetir entre dos dispositivos reales con esta versión.
 12. **Pantalla encendida al escuchar (2026-10-31):** en el móvil, si la pantalla se apaga el navegador corta el micrófono y se pierden mensajes. Mientras se escucha, la web pide `navigator.wakeLock` ("screen"); lo vuelve a pedir al volver a la página y lo suelta al apagar el micrófono. Si la página pasa a segundo plano con el micrófono activo, avisa en la línea de estado. Comprobado en el navegador con un micrófono simulado: se pide al activar y se suelta al apagar, sin errores. En navegadores sin Wake Lock no hace nada.
+13. **Robusto por defecto en la web (2026-10-31):** el protocolo de envío por defecto pasa de Normal a Robusto. Por aire fue el más fiable (54/60 frente a 50/60 de Normal y 53/60 de Rápido), y Waver también usa por defecto su modo más largo. Cuesta tiempo: 16 B tardan 7,4 s (Normal 4,6 s, Rápido 3,8 s). El receptor reconoce los tres solo, así que no hay que cambiar nada al recibir.
 5. Borrar a mano el repositorio equivocado `Andres0122/transmision-datos-ondas-audibles`.
 
 ## Acuerdos de trabajo

@@ -10,7 +10,7 @@ import {
   signalSeconds,
   StreamReceiver,
   Resampler,
-} from "./spacewases.js?v=20261031f";
+} from "./spacewases.js?v=20261031g";
 
 const PROFILE_LABELS = {
   robust: "Robusto",
@@ -85,7 +85,8 @@ for (const [name, [tab]] of Object.entries(tabs)) {
 
 // --- Ajustes ----------------------------------------------------------------
 
-let profile = "normal";
+// Robusto por defecto: por aire fue el más fiable (54 de 60 frente a 50 de Normal).
+let profile = "robust";
 
 for (const name of Object.keys(PROFILES)) {
   const [, chunk, parity] = PROFILES[name];
@@ -474,7 +475,7 @@ async function startListening() {
     // ocupada; ScriptProcessor queda para navegadores sin AudioWorklet.
     if (micContext.audioWorklet && window.AudioWorkletNode) {
       try {
-        await micContext.audioWorklet.addModule("captura.js?v=20261031f");
+        await micContext.audioWorklet.addModule("captura.js?v=20261031g");
         processorNode = new AudioWorkletNode(micContext, "captura", { outputChannelCount: [1] });
         processorNode.port.onmessage = (event) => onAudio(event.data);
       } catch {
