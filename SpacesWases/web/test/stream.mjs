@@ -1,5 +1,5 @@
 // Pruebas del receptor en flujo: se le pasa el audio en trozos, como llega del microfono.
-import { send, StreamReceiver, ReplayGuard, Resampler, FS } from "../spacewases.js";
+import { send, StreamReceiver, LiveSession, ReplayGuard, Resampler, FS, CHIRP_LEN } from "../spacewases.js";
 
 let passed = 0;
 let failed = 0;
@@ -160,6 +160,160 @@ await check("dos mensajes en un mismo trozo: salen los dos, en orden", async () 
   const ev = await new StreamReceiver().push(audio);
   const texts = ev.results.map((r) => (r.message ? `${dec.decode(r.message)}/${r.profile}` : "fallo"));
   return JSON.stringify(texts) === JSON.stringify(["uno/fast", "dos/normal"]) || JSON.stringify(texts);
+});
+
+await check("sonidos que no son mensajes: ningún mensaje ni error, y vuelve a reposo", async () => {
+  const seconds = 12;
+  const tone = (fn) => Float32Array.from({ length: seconds * FS }, (_, i) => fn(i / FS));
+  const sounds = {
+    tono: tone((t) => 0.3 * Math.sin(2 * Math.PI * 3000 * t)),
+    barrido: tone((t) => {
+      const u = t % 0.15;
+      return 0.3 * Math.sin(2 * Math.PI * (1000 * u + (3000 * u * u) / 0.15));
+    }),
+    acordes: tone((t) => {
+      let s = 0;
+      for (const f of [523, 1047, 1568, 2093, 3136, 4186]) s += Math.sin(2 * Math.PI * f * (1 + (Math.floor(t * 2) % 5) / 12) * t);
+      return 0.05 * s;
+    }),
+    voz: (() => {
+      // La fase se integra: el tono de una voz sube y baja despacio, no barre como un chirp.
+      let phase = 0;
+      return tone((t) => {
+        phase += (2 * Math.PI * (130 + 60 * Math.sin(2 * Math.PI * 1.3 * t))) / FS;
+        let s = 0;
+        for (let h = 1; h <= 20; h++) s += Math.sin(h * phase) / h;
+        return 0.2 * s * (0.5 + 0.5 * Math.sin(2 * Math.PI * 2.7 * t));
+      });
+    })(),
+  };
+  for (const [name, audio] of Object.entries(sounds)) {
+    const receiver = new StreamReceiver();
+    const rng = makeRng(20);
+    const events = await stream(receiver, concat([audio, noise(32, 0.001, rng)]), rng);
+    if (events.length !== 0 || receiver.state !== "idle") return `${name}: ${events.length} eventos, estado ${receiver.state}`;
+  }
+  return true;
+});
+
+await check("sin chirp final: decodifica por la longitud, sin esperar al tope", async () => {
+  const rng = makeRng(11);
+  const sig = await send(enc.encode("sin final"), null, "fast");
+  const audio = concat([noise(1, 0.01, rng), sig.subarray(0, sig.length - CHIRP_LEN), noise(1, 0.01, rng)]);
+  const receiver = new StreamReceiver();
+  const events = await stream(receiver, audio, rng);
+  if (events.length !== 1 || !events[0].message) return `eventos: ${events.length}`;
+  return (dec.decode(events[0].message) === "sin final" && receiver.state === "idle") || "mensaje distinto";
+});
+
+await check("chirp final débil y otro mensaje detrás: salen los dos", async () => {
+  const rng = makeRng(12);
+  const a = await send(enc.encode("primero"), null, "fast");
+  const b = await send(enc.encode("segundo"), null, "fast");
+  const debil = Float32Array.from(a);
+  for (let i = debil.length - CHIRP_LEN; i < debil.length; i++) debil[i] *= 0.02;
+  const audio = concat([noise(1, 0.01, rng), debil, noise(1, 0.01, rng), b, noise(1, 0.01, rng)]);
+  const events = await stream(new StreamReceiver(), audio, rng);
+  const texts = events.map((e) => (e.message ? dec.decode(e.message) : "fallo"));
+  return JSON.stringify(texts) === JSON.stringify(["primero", "segundo"]) || JSON.stringify(texts);
+});
+
+await check("falsa detección seguida de un mensaje: se recibe el mensaje y no hay error", async () => {
+  const rng = makeRng(13);
+  const sig = await send(enc.encode("real"), null, "fast");
+  const audio = concat([noise(1, 0.01, rng), sig.subarray(0, CHIRP_LEN), noise(2, 0.01, rng), sig, noise(1, 0.01, rng)]);
+  const events = await stream(new StreamReceiver(), audio, rng);
+  const texts = events.map((e) => (e.message ? dec.decode(e.message) : "fallo"));
+  return JSON.stringify(texts) === JSON.stringify(["real"]) || JSON.stringify(texts);
+});
+
+await check("falsa detección sola: pasa a candidato, se abandona sin error y vuelve a reposo", async () => {
+  const rng = makeRng(14);
+  const sig = await send(enc.encode("x"), null, "fast");
+  const receiver = new StreamReceiver();
+  let events = await stream(receiver, concat([noise(1, 0.01, rng), sig.subarray(0, CHIRP_LEN), noise(3, 0.01, rng)]), rng);
+  if (receiver.state !== "candidate" || events.length !== 0) return `estado ${receiver.state}`;
+  events = await stream(receiver, noise(31, 0.01, rng), rng);
+  return (events.length === 0 && receiver.state === "idle") || `eventos ${events.length}, estado ${receiver.state}`;
+});
+
+await check("progreso: solo con mensaje confirmado, creciente y hasta 1", async () => {
+  const rng = makeRng(15);
+  const sig = await send(enc.encode("avance"), null, "normal");
+  const audio = concat([noise(0.5, 0.01, rng), sig, noise(0.5, 0.01, rng)]);
+  const receiver = new StreamReceiver();
+  const seen = [];
+  for (let off = 0; off < audio.length; off += 4096) {
+    await receiver.push(audio.subarray(off, off + 4096));
+    if (receiver.progress !== null) seen.push(receiver.progress);
+  }
+  const increasing = seen.every((v, i) => i === 0 || v >= seen[i - 1]);
+  return (seen.length > 5 && increasing && seen[0] > 0 && seen[seen.length - 1] <= 1) || JSON.stringify(seen.slice(0, 5));
+});
+
+await check("mensaje repetido con la primera copia dañada, sin chirp final: lo salva la segunda", async () => {
+  const rng = makeRng(16);
+  const sig = await send(enc.encode("dos copias"), null, "fast", 2);
+  const damaged = Float32Array.from(sig.subarray(0, sig.length - CHIRP_LEN));
+  const copy = (damaged.length - CHIRP_LEN) / 2;
+  for (let i = Math.floor(copy * 0.55); i < Math.floor(copy * 0.75); i++) damaged[i] = 0.5 * gaussian(rng);
+  const audio = concat([noise(0.5, 0.01, rng), damaged, noise(4, 0.01, rng)]);
+  const events = await stream(new StreamReceiver(), audio, rng);
+  const texts = events.map((e) => (e.message ? dec.decode(e.message) : "fallo"));
+  return texts[0] === "dos copias" || JSON.stringify(texts);
+});
+
+await check("clave equivocada: falla una vez y sigue recibiendo", async () => {
+  const rng = makeRng(17);
+  const a = await send(enc.encode("secreto"), enc.encode("otra frase larga"), "fast");
+  const b = await send(enc.encode("abierto"), null, "fast");
+  const audio = concat([noise(0.5, 0.01, rng), a, noise(1, 0.01, rng), b, noise(1, 0.01, rng)]);
+  const events = await stream(new StreamReceiver(), audio, rng);
+  const texts = events.map((e) => (e.message ? dec.decode(e.message) : "fallo"));
+  return JSON.stringify(texts) === JSON.stringify(["fallo", "abierto"]) || JSON.stringify(texts);
+});
+
+await check("grabación larga: el búfer no se copia en cada trozo", async () => {
+  const receiver = new StreamReceiver();
+  const sig = await send(enc.encode("x".repeat(150)), null, "robust");
+  const started = performance.now();
+  let worst = 0;
+  for (let off = 0; off < sig.length; off += 4096) {
+    const t0 = performance.now();
+    await receiver.push(sig.subarray(off, off + 4096));
+    worst = Math.max(worst, performance.now() - t0);
+  }
+  const elapsed = performance.now() - started;
+  return (receiver.state === "idle" && elapsed < 3000) || `${elapsed.toFixed(0)} ms, peor ${worst.toFixed(0)} ms`;
+});
+
+await check("LiveSession: en cola, en orden y sin decodificar dos veces a la vez", async () => {
+  const rng = makeRng(18);
+  const a = await send(enc.encode("uno"), null, "fast");
+  const b = await send(enc.encode("dos"), null, "fast");
+  const audio = concat([noise(0.5, 0.01, rng), a, noise(1, 0.01, rng), b, noise(1, 0.01, rng)]);
+  const texts = [];
+  const session = new LiveSession(FS, (event) => {
+    for (const r of event.results) texts.push(r.message ? dec.decode(r.message) : "fallo");
+  });
+  for (let off = 0; off < audio.length; off += 4096) session.feed(audio.slice(off, off + 4096), null, false);
+  while (session.running) await new Promise((resolve) => setTimeout(resolve, 5));
+  return JSON.stringify(texts) === JSON.stringify(["uno", "dos"]) || JSON.stringify(texts);
+});
+
+await check("LiveSession: reset descarta lo recibido y sigue funcionando", async () => {
+  const rng = makeRng(19);
+  const a = await send(enc.encode("cortado"), null, "fast");
+  const b = await send(enc.encode("entero"), null, "fast");
+  const texts = [];
+  const session = new LiveSession(FS, (event) => {
+    for (const r of event.results) texts.push(r.message ? dec.decode(r.message) : "fallo");
+  });
+  session.feed(concat([noise(0.5, 0.01, rng), a.subarray(0, a.length >> 1)]), null, false);
+  session.reset();
+  session.feed(concat([noise(0.5, 0.01, rng), b, noise(1, 0.01, rng)]), null, false);
+  while (session.running) await new Promise((resolve) => setTimeout(resolve, 5));
+  return JSON.stringify(texts) === JSON.stringify(["entero"]) || JSON.stringify(texts);
 });
 
 // Remuestreo lineal de una sola vez, como "microfono" a otra frecuencia en las pruebas.

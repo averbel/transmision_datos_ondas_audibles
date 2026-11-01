@@ -206,6 +206,10 @@ body {
   accent-color: var(--send);
 }
 
+.rx-progress {
+  accent-color: var(--recv);
+}
+
 .tx-progress[hidden] {
   display: none;
 }

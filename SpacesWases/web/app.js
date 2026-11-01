@@ -3,14 +3,12 @@ import {
   receive,
   wavEncode,
   wavDecode,
-  ReplayGuard,
   PROFILES,
   FRAMES,
   FS,
   signalSeconds,
-  StreamReceiver,
-  Resampler,
-} from "./spacewases.js?v=20261031h";
+  LiveSession,
+} from "./spacewases.js?v=20261101a";
 
 const PROFILE_LABELS = {
   robust: "Robusto",
@@ -32,6 +30,7 @@ const dotSpectrum = $("dot-spectrum");
 const messagesList = $("messages");
 const rxStatus = $("rx-status");
 const txProgress = $("tx-progress");
+const rxProgress = $("rx-progress");
 const cancelRxButton = $("cancel-rx");
 const listenButton = $("listen");
 const sendForm = $("send-form");
@@ -330,19 +329,13 @@ downloadButton.addEventListener("click", async () => {
 });
 
 // --- Recepción en vivo ------------------------------------------------------
-// El micrófono alimenta un receptor en flujo: detecta el chirp de inicio, graba
-// hasta el de fin y decodifica en ese momento.
-
-const liveReceiver = new StreamReceiver({ maxSeconds: MAX_LIVE_SECONDS });
-let liveGuard = new ReplayGuard();
-let pendingAudio = [];
+// El micrófono alimenta una sesión de escucha en un hilo aparte (receptor.js), que
+// detecta el chirp de inicio, lee la longitud y decodifica al llegar al final.
 
 let captureRate = FS;
-let resampler = null;
+let liveReceiver = null;
 let listening = false;
 let starting = false;
-let scanning = false;
-let scanTimer = 0;
 let micContext = null;
 let micStream = null;
 let sourceNode = null;
@@ -351,21 +344,43 @@ let silentGain = null;
 let analyserNode = null;
 
 function clearLiveAudio() {
-  pendingAudio = [];
-  liveReceiver.reset();
+  if (liveReceiver) liveReceiver.reset();
   cancelRxButton.hidden = true;
+  rxProgress.hidden = true;
 }
 
-function takePendingAudio() {
-  const total = pendingAudio.reduce((n, part) => n + part.length, 0);
-  const out = new Float32Array(total);
-  let offset = 0;
-  for (const part of pendingAudio) {
-    out.set(part, offset);
-    offset += part.length;
+// Sesión de escucha en un Worker de módulo; donde no los hay, corre en esta página.
+function createLiveReceiver(rate) {
+  let supportsModuleWorker = false;
+  let worker = null;
+  if (window.Worker) {
+    worker = new Worker("receptor.js?v=20261101a", {
+      get type() {
+        supportsModuleWorker = true;
+        return "module";
+      },
+    });
   }
-  pendingAudio = [];
-  return out;
+  if (!supportsModuleWorker) {
+    if (worker) worker.terminate();
+    const session = new LiveSession(rate, handleReceiverEvent, { maxSeconds: MAX_LIVE_SECONDS });
+    return {
+      feed: (samples, key, replayCheck) => session.feed(samples, key, replayCheck),
+      reset: () => session.reset(),
+      stop: () => session.reset(),
+    };
+  }
+  worker.onmessage = ({ data }) => handleReceiverEvent(data);
+  worker.onerror = (event) => {
+    addLogEntry({ direction: "Error", text: `Error del receptor: ${event.message}`, error: true });
+  };
+  worker.postMessage({ type: "start", captureRate: rate, maxSeconds: MAX_LIVE_SECONDS });
+  return {
+    feed: (samples, key, replayCheck) =>
+      worker.postMessage({ type: "audio", samples, key, replayCheck }, [samples.buffer]),
+    reset: () => worker.postMessage({ type: "reset" }),
+    stop: () => worker.terminate(),
+  };
 }
 
 // En el móvil, si la pantalla se apaga el navegador corta el micrófono y se pierden
@@ -398,10 +413,6 @@ document.addEventListener("visibilitychange", () => {
 function stopListening() {
   listening = false;
   releaseScreen();
-  if (scanTimer) {
-    window.clearTimeout(scanTimer);
-    scanTimer = 0;
-  }
   if (processorNode) {
     if (processorNode.port) processorNode.port.onmessage = null;
     else processorNode.onaudioprocess = null;
@@ -421,8 +432,9 @@ function stopListening() {
     micContext = null;
   }
   captureRate = FS;
-  resampler = null;
   clearLiveAudio();
+  if (liveReceiver) liveReceiver.stop();
+  liveReceiver = null;
   listenButton.textContent = "Activar micrófono";
   listenButton.classList.remove("active");
   dotSpectrum.className = "dot dot-off";
@@ -460,7 +472,7 @@ async function startListening() {
       sourceNode = micContext.createMediaStreamSource(micStream);
     }
     captureRate = micContext.sampleRate;
-    resampler = new Resampler(captureRate, FS);
+    liveReceiver = createLiveReceiver(captureRate);
     if (micContext.state === "suspended") await micContext.resume();
 
     analyserNode = micContext.createAnalyser();
@@ -469,13 +481,13 @@ async function startListening() {
     sourceNode.connect(analyserNode);
 
     const onAudio = (samples) => {
-      if (listening && !transmitting) pendingAudio.push(samples);
+      if (listening && !transmitting) liveReceiver.feed(samples, keyBytes(), replayCheck.checked);
     };
     // AudioWorklet captura en el hilo de audio y no pierde muestras si la página está
     // ocupada; ScriptProcessor queda para navegadores sin AudioWorklet.
     if (micContext.audioWorklet && window.AudioWorkletNode) {
       try {
-        await micContext.audioWorklet.addModule("captura.js?v=20261031h");
+        await micContext.audioWorklet.addModule("captura.js?v=20261101a");
         processorNode = new AudioWorkletNode(micContext, "captura", { outputChannelCount: [1] });
         processorNode.port.onmessage = (event) => onAudio(event.data);
       } catch {
@@ -492,8 +504,6 @@ async function startListening() {
     processorNode.connect(silentGain);
     silentGain.connect(micContext.destination);
 
-    clearLiveAudio();
-    liveGuard = new ReplayGuard();
     listening = true;
     keepScreenOn();
     listenButton.textContent = "Apagar micrófono";
@@ -501,7 +511,6 @@ async function startListening() {
     dotSpectrum.className = "dot dot-on";
     idleStatus();
     if (currentTab === "spectrum") startSpectrum();
-    scanTimer = window.setTimeout(scanLoop, 200);
   } catch (error) {
     stopListening();
     setRxStatus(`No se pudo iniciar la escucha: ${error.message}`, "error");
@@ -529,18 +538,17 @@ cancelRxButton.addEventListener("click", () => {
   idleStatus();
 });
 
-async function scanOnce() {
-  if (pendingAudio.length === 0 || transmitting) return;
-  const samples = resampler.push(takePendingAudio());
-  const key = keyBytes();
-  const guard = key !== null && replayCheck.checked ? liveGuard : null;
-  const event = await liveReceiver.push(samples, key, guard);
+function handleReceiverEvent(event) {
+  if (!listening) return;
+  if (event.error) {
+    addLogEntry({ direction: "Error", text: `Error al decodificar: ${event.error}`, error: true });
+  }
   for (const result of event.results) {
     if (result.message !== null) {
       addLogEntry({
         direction: "Recv",
         profileName: result.profile,
-        encrypted: key !== null,
+        encrypted: event.encrypted,
         text: decodeText(result.message),
       });
     } else if (result.rejected !== null) {
@@ -553,36 +561,24 @@ async function scanOnce() {
       addLogEntry({
         direction: "Error",
         text:
-          key !== null
+          event.encrypted
             ? "Señal recibida pero no decodificada (¿misma clave? prueba Robusto o acerca los equipos)"
             : "Señal recibida pero no decodificada (prueba Robusto, más volumen o acerca los equipos)",
         error: true,
       });
     }
   }
-  if (liveReceiver.state === "recording") {
-    const seconds = liveReceiver.buffer.length / FS;
-    setRxStatus(`Recibiendo… ${formatSeconds(seconds)} s`, "busy");
+  if (transmitting) return;
+  if (event.state === "recording") {
+    setRxStatus(`Recibiendo… ${Math.round(event.progress * 100)} %`, "busy");
+    rxProgress.value = event.progress;
+    rxProgress.hidden = false;
     cancelRxButton.hidden = false;
   } else {
+    rxProgress.hidden = true;
     cancelRxButton.hidden = true;
-    if (!transmitting) idleStatus();
+    idleStatus();
   }
-}
-
-async function scanLoop() {
-  if (!listening) return;
-  if (!scanning) {
-    scanning = true;
-    try {
-      await scanOnce();
-    } catch (error) {
-      if (listening) addLogEntry({ direction: "Error", text: `Error al decodificar: ${error.message}`, error: true });
-    } finally {
-      scanning = false;
-    }
-  }
-  if (listening) scanTimer = window.setTimeout(scanLoop, 200);
 }
 
 // --- Espectro y cascada -----------------------------------------------------

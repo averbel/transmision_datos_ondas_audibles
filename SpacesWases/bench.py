@@ -10,7 +10,7 @@ from spacewases import PROFILES, receive, send
 from spacewases.modem import FS
 
 SEED = 20261028
-SNRS = list(range(-12, 13, 2))
+SNRS = list(range(-26, 13, 2))
 TRIALS = 100
 MSG_LEN = 16
 

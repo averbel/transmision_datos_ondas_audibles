@@ -206,12 +206,8 @@ class ReplayGuard:
 class Reassembler:
     """Reensambla fragmentos desordenados o duplicados."""
 
-    def __init__(self, key: bytes | None = None):
-        self.key = key
+    def __init__(self):
         self._pending: dict[tuple, dict] = {}
-
-    def reset(self) -> None:
-        self._pending.clear()
 
     def push(self, frame: dict) -> bytes | None:
         msg_id = (frame["msg_id"], frame.get("session"))
@@ -230,12 +226,6 @@ class Reassembler:
         message = b"".join(state["parts"][i] for i in range(total))
         del self._pending[msg_id]
         return message
-
-    def push_bytes(self, plain: bytes, key: bytes | None = None) -> bytes | None:
-        frame = parse_frame(plain, self.key if key is None else key)
-        if frame is None:
-            return None
-        return self.push(frame)
 
 
 # Cada transmision empieza con un bloque de longitud: perfil y longitud total del

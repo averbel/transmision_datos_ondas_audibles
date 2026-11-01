@@ -11,7 +11,13 @@ export const CHIRP_F1 = 6000;
 export const GUARD = 384;
 export const SYMBOL_RAMP = 64;
 export const TONE_AMP = 0.36;
-export const SYNC_THRESHOLD = 0.25;
+// Umbrales del chirp (igual que en modem.py). El de inicio es bajo porque por aire hay
+// mensajes decodificables con el chirp en 0,07-0,12, y una falsa deteccion casi no cuesta:
+// el bloque de longitud, con su Reed-Solomon, la descarta. El de fin es alto porque los
+// tonos de los datos llegan a 0,14: un fin falso cortaria el mensaje, y perder el fin no
+// impide decodificar porque la longitud ya se conoce.
+export const SYNC_THRESHOLD = 0.07;
+export const END_THRESHOLD = 0.25;
 export const MAGIC = 0xa5;
 export const VERSION = 1;
 export const HEADER_LEN = 6;
@@ -451,10 +457,7 @@ function bitLength(value) {
 }
 
 function toFloat64Array(signal) {
-  if (signal instanceof Float64Array) return signal;
-  if (signal instanceof Float32Array) return Float64Array.from(signal);
-  if (ArrayBuffer.isView(signal)) return Float64Array.from(signal);
-  return Float64Array.from(signal);
+  return signal instanceof Float64Array ? signal : Float64Array.from(signal);
 }
 
 // FFT mas larga que se usa para correlar. Senales mas largas se procesan por bloques
@@ -535,24 +538,16 @@ function toneScores(power, offset) {
 }
 
 // Busca el chirp inicial y el final una sola vez; los perfiles comparten la sincronia.
-function synchronize(signal, onStatus) {
+function synchronize(signal) {
   const s = toFloat64Array(signal);
-  if (s.length === 0) {
-    if (onStatus) onStatus({ detected: false, score: 0 });
-    return null;
-  }
   const found = findChirpInternal(s, false);
-  if (!found || found.score < SYNC_THRESHOLD) {
-    if (onStatus) onStatus({ detected: false, score: found ? found.score : 0 });
-    return null;
-  }
-  if (onStatus) onStatus({ detected: true, score: found.score });
+  if (!found || found.score < SYNC_THRESHOLD) return null;
 
   const dataStart = found.index + CHIRP_LEN + GUARD;
   let dataEnd = s.length;
   if (dataStart < s.length) {
     const endFound = findChirpInternal(s.subarray(dataStart), true);
-    if (endFound && endFound.score >= SYNC_THRESHOLD) dataEnd = dataStart + endFound.index - GUARD;
+    if (endFound && endFound.score >= END_THRESHOLD) dataEnd = dataStart + endFound.index - GUARD;
   }
   return { s, dataStart, dataEnd, endKnown: dataEnd !== s.length };
 }
@@ -596,8 +591,8 @@ function demodulateSynced(sync, frames, offset = 0) {
   return out.slice(0, written);
 }
 
-export function demodulate(signal, onStatus = null, frames = 1) {
-  const sync = synchronize(signal, onStatus);
+export function demodulate(signal, frames = 1) {
+  const sync = synchronize(signal);
   return sync === null ? null : demodulateSynced(sync, frames);
 }
 
@@ -623,20 +618,10 @@ export function modulate(data, frames = 1) {
   return out;
 }
 
-let subtlePromise = null;
-
-function getSubtle() {
-  if (globalThis.crypto && globalThis.crypto.subtle) {
-    return Promise.resolve(globalThis.crypto.subtle);
-  }
-  if (!subtlePromise) {
-    subtlePromise = import("node:crypto").then((mod) => {
-      const wc = mod.webcrypto;
-      if (!wc || !wc.subtle) throw new Error("crypto.subtle no disponible");
-      return wc.subtle;
-    });
-  }
-  return subtlePromise;
+// Sin Web Crypto no se puede cifrar ni generar nonces seguros: mejor fallar que degradar.
+async function getSubtle() {
+  if (!globalThis.crypto || !globalThis.crypto.subtle) throw new Error("crypto.subtle no disponible");
+  return globalThis.crypto.subtle;
 }
 
 const hmacKeyCache = new Map();
@@ -647,17 +632,28 @@ function bytesToHex(bytes) {
   return out;
 }
 
-function importHmacKey(key) {
-  const normalized = key.length === 0 ? new Uint8Array(64) : key;
-  const id = bytesToHex(normalized);
-  let promise = hmacKeyCache.get(id);
+// Cache de derivaciones de clave, limitada para no retener en memoria todas las claves
+// probadas en la pagina. Un fallo no se guarda: el siguiente intento vuelve a derivar.
+const KEY_CACHE_SIZE = 8;
+
+function cachedKey(cache, id, derive) {
+  let promise = cache.get(id);
   if (!promise) {
-    promise = getSubtle().then((subtle) =>
-      subtle.importKey("raw", normalized, { name: "HMAC", hash: "SHA-256" }, false, ["sign"])
-    );
-    hmacKeyCache.set(id, promise);
+    promise = derive();
+    cache.set(id, promise);
+    promise.catch(() => cache.delete(id));
+    if (cache.size > KEY_CACHE_SIZE) cache.delete(cache.keys().next().value);
   }
   return promise;
+}
+
+function importHmacKey(key) {
+  const normalized = key.length === 0 ? new Uint8Array(64) : key;
+  return cachedKey(hmacKeyCache, bytesToHex(normalized), () =>
+    getSubtle().then((subtle) =>
+      subtle.importKey("raw", normalized, { name: "HMAC", hash: "SHA-256" }, false, ["sign"])
+    )
+  );
 }
 
 async function hmacTag(body, key) {
@@ -708,31 +704,19 @@ export async function masterKey(key) {
 }
 
 function subkeys(key) {
-  const id = bytesToHex(key);
-  let promise = subkeyCache.get(id);
-  if (!promise) {
-    promise = (async () => {
-      const subtle = await getSubtle();
-      const root = await importHmacKey(await masterKey(key));
-      const derive = async (label) => {
-        const digest = await subtle.sign("HMAC", root, textEncoder.encode(`spacewases-v2-${label}`));
-        return subtle.importKey("raw", digest, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
-      };
-      return { enc: await derive("enc"), mac: await derive("mac") };
-    })();
-    subkeyCache.set(id, promise);
-  }
-  return promise;
+  return cachedKey(subkeyCache, bytesToHex(key), async () => {
+    const subtle = await getSubtle();
+    const root = await importHmacKey(await masterKey(key));
+    const derive = async (label) => {
+      const digest = await subtle.sign("HMAC", root, textEncoder.encode(`spacewases-v2-${label}`));
+      return subtle.importKey("raw", digest, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+    };
+    return { enc: await derive("enc"), mac: await derive("mac") };
+  });
 }
 
 function randomBytes(n) {
-  const out = new Uint8Array(n);
-  if (globalThis.crypto && globalThis.crypto.getRandomValues) {
-    globalThis.crypto.getRandomValues(out);
-  } else {
-    for (let i = 0; i < n; i++) out[i] = Math.floor(Math.random() * 256);
-  }
-  return out;
+  return globalThis.crypto.getRandomValues(new Uint8Array(n));
 }
 
 // Sesion nueva: marca de tiempo (s, 4 bytes big-endian) + nonce aleatorio de 6 bytes.
@@ -866,10 +850,6 @@ class Reassembler {
     this.pending = new Map();
   }
 
-  reset() {
-    this.pending.clear();
-  }
-
   push(frame) {
     const msgId = frame.session === null ? `${frame.msgId}` : `${frame.msgId}:${bytesToHex(frame.session)}`;
     const total = frame.fragTotal;
@@ -894,13 +874,7 @@ let lastMessageId = -1;
 function nextMessageId() {
   lastMessageId = (lastMessageId + 1) & 0xff;
   if (lastMessageId === 0) {
-    const random = new Uint8Array(1);
-    if (globalThis.crypto && globalThis.crypto.getRandomValues) {
-      globalThis.crypto.getRandomValues(random);
-    } else {
-      random[0] = 1 + Math.floor(Math.random() * 255);
-    }
-    lastMessageId = random[0] || 1;
+    lastMessageId = randomBytes(1)[0] || 1;
   }
   return lastMessageId;
 }
@@ -1009,8 +983,11 @@ export function signalSeconds(byteLength, profile, keyed = false, repeat = 1) {
 export async function receive(signal, key = null, onStatus = null, guard = null) {
   if (guard !== null) guard.lastReason = null;
   const sync = synchronize(signal, onStatus);
-  if (sync === null) return null;
-  for (const name of RECEIVE_ORDER) {
+  return sync === null ? null : decodeWithRetry(sync, key, onStatus, guard, RECEIVE_ORDER);
+}
+
+async function decodeSynced(sync, key, onStatus, guard, names) {
+  for (const name of names) {
     for (const offset of ALIGN_OFFSETS) {
       const raw = demodulateSynced(sync, FRAMES[name], offset);
       const result = await decodeStream(raw, key, [PROFILES[name]], guard);
@@ -1024,49 +1001,211 @@ export async function receive(signal, key = null, onStatus = null, guard = null)
   return null;
 }
 
+// Si un fin de datos falso corto el mensaje, se repite sin el: la longitud ya delimita
+// los bloques, y el fin solo hace falta para repartir copias repetidas.
+async function decodeWithRetry(sync, key, onStatus, guard, names) {
+  const message = await decodeSynced(sync, key, onStatus, guard, names);
+  if (message !== null || !sync.endKnown || (guard !== null && guard.lastReason !== null)) return message;
+  return decodeSynced({ ...sync, dataEnd: sync.s.length, endKnown: false }, key, onStatus, guard, names);
+}
+
 // Primer chirp (directo o invertido) de signal a partir de from, buscado en ventanas
 // de window muestras que se solapan un chirp, como si el audio llegara en trozos
 // pequenos. Asi, en un tramo largo con varios mensajes, se encuentra el primero y no
 // el que mas correlaciona. Devuelve el indice absoluto o null.
-function firstChirp(signal, from, reverse, window) {
+function firstChirp(signal, from, reverse, window, threshold) {
   for (let start = from; start + CHIRP_LEN <= signal.length; start += window - CHIRP_LEN) {
     const segment = signal.subarray(start, Math.min(signal.length, start + window));
     const found = findChirpInternal(toFloat64Array(segment), reverse);
-    if (found && found.score >= SYNC_THRESHOLD) return start + found.index;
+    if (found && found.score >= threshold) return start + found.index;
     if (start + window >= signal.length) break;
   }
   return null;
 }
 
-// Receptor en flujo, con la idea de ggwave: en reposo busca el chirp de inicio; al
-// encontrarlo graba hasta ver el chirp de fin (o hasta maxSeconds) y entonces hace un
-// unico intento de decodificar antes de volver a reposo. Los trozos pueden ser de
-// cualquier tamano (en el navegador crecen si el hilo esta ocupado o la pestana en
-// segundo plano): todo el audio nuevo se revisa y caben varios mensajes en un trozo.
+// Copias del mensaje que se esperan como maximo sin ver el chirp final (como en la web).
+const MAX_COPIES = 3;
+// Sin bloque de longitud valido, lo detectado se abandona en silencio tras este tiempo:
+// casi siempre fue una falsa deteccion. Se espera algo por si una copia repetida se salva.
+const NO_HEADER_SECONDS = 30;
+// Muestras de mas antes de decodificar, para las ventanas desplazadas de ALIGN_OFFSETS.
+const DECODE_MARGIN = 512;
+
+// Receptor en flujo. En reposo busca el chirp de inicio; al encontrarlo lee el bloque de
+// longitud, que dice donde acaba el mensaje, y decodifica al llegar ahi sin depender del
+// chirp final. Si el bloque no se lee, espera el chirp final o abandona. Estados: "idle"
+// (en reposo), "candidate" (chirp detectado, aun sin longitud) y "recording" (mensaje
+// confirmado). Los trozos pueden ser de cualquier tamano y caben varios mensajes en uno.
 export class StreamReceiver {
   constructor({ maxSeconds = 90, hop = 4096, endCheckEvery = 16384 } = {}) {
     this.maxSamples = Math.round(maxSeconds * FS);
     this.window = 2 * CHIRP_LEN + hop;
     this.endCheckEvery = endCheckEvery;
+    this.data = new Float32Array(1 << 16);
     this.reset();
   }
 
   reset() {
     this.state = "idle";
-    this.buffer = new Float32Array(0);
-    this.endSearchFrom = 0;
+    this.size = 0;
+    this.skip = 0;
+    this.start = 0;
+    this.header = null;
+    this.triedHeader = new Set();
+    this.copiesTried = 0;
     this.checkedUpTo = 0;
   }
 
-  append(samples) {
-    const out = new Float32Array(this.buffer.length + samples.length);
-    out.set(this.buffer, 0);
-    out.set(samples, this.buffer.length);
-    this.buffer = out;
+  // Lo recibido hasta ahora, sin copiar. Se invalida al llamar a append o drop.
+  get audio() {
+    return this.data.subarray(0, this.size);
   }
 
-  keepTail(length) {
-    if (this.buffer.length > length) this.buffer = this.buffer.slice(this.buffer.length - length);
+  get dataStart() {
+    return this.start + CHIRP_LEN + GUARD;
+  }
+
+  // Avance de la recepcion confirmada de 0 a 1, o null si no hay ninguna.
+  get progress() {
+    if (this.state !== "recording") return null;
+    return Math.min(1, (this.size - this.dataStart) / this.header.samples);
+  }
+
+  // Duplica la capacidad al crecer: copiar toda la grabacion en cada trozo cuesta mucho
+  // en una grabacion larga y el recolector de basura detiene la pagina.
+  append(samples) {
+    const needed = this.size + samples.length;
+    if (needed > this.data.length) {
+      const grown = new Float32Array(Math.max(needed, 2 * this.data.length));
+      grown.set(this.audio, 0);
+      this.data = grown;
+    }
+    this.data.set(samples, this.size);
+    this.size = needed;
+  }
+
+  drop(count) {
+    this.data.copyWithin(0, count, this.size);
+    this.size -= count;
+  }
+
+  beginCandidate(start) {
+    const dropped = Math.max(0, start - SYMBOL);
+    this.drop(dropped);
+    this.start = start - dropped;
+    this.state = "candidate";
+    this.header = null;
+    this.triedHeader = new Set();
+    this.copiesTried = 0;
+    this.checkedUpTo = this.dataStart;
+    this.restartFrom = this.dataStart;
+  }
+
+  // Intenta leer el bloque de longitud con cada perfil, una sola vez cuando ya llego.
+  readHeader(keyed) {
+    for (const name of RECEIVE_ORDER) {
+      if (this.triedHeader.has(name)) continue;
+      const { period } = symbolLayout(FRAMES[name]);
+      const blockEnd = this.dataStart + LEN_BLOCK * period + DECODE_MARGIN;
+      if (this.size < blockEnd) continue;
+      this.triedHeader.add(name);
+      const s = toFloat64Array(this.audio.subarray(0, blockEnd));
+      const [profileId, chunk, parity] = PROFILES[name];
+      for (const offset of ALIGN_OFFSETS) {
+        const dataEnd = this.dataStart + offset + LEN_BLOCK * period;
+        const raw = demodulateSynced({ s, dataStart: this.dataStart, dataEnd }, FRAMES[name], offset);
+        const length = readLength(raw, 0, profileId);
+        if (length !== null) {
+          return { name, samples: sequenceLength(length, keyed, chunk, parity) * period };
+        }
+      }
+    }
+    return null;
+  }
+
+  async decode(end, key, guard) {
+    const limit = end === null ? this.size : Math.min(this.size, end + CHIRP_LEN);
+    const s = toFloat64Array(this.audio.subarray(0, limit));
+    const sync = { s, dataStart: this.dataStart, dataEnd: end === null ? limit : end - GUARD, endKnown: end !== null };
+    const result = { message: null, profile: null, rejected: null, failed: false };
+    const onStatus = (status) => {
+      if (status.decoded) result.profile = status.profile;
+    };
+    const names = this.header ? [this.header.name] : RECEIVE_ORDER;
+    if (guard !== null) guard.lastReason = null;
+    result.message = await decodeWithRetry(sync, key, onStatus, guard, names);
+    if (result.message === null) {
+      if (guard !== null && guard.lastReason !== null) result.rejected = guard.lastReason;
+      else result.failed = true;
+    }
+    return result;
+  }
+
+  finish(cut, results, result) {
+    if (result) results.push(result);
+    const dropped = Math.min(this.size, cut);
+    this.drop(dropped);
+    this.skip = cut - dropped;
+    this.state = "idle";
+    this.header = null;
+  }
+
+  // Avanza la recepcion en curso. Devuelve true si termino y hay que volver a buscar.
+  async advance(key, guard, results) {
+    if (this.header === null) {
+      this.header = this.readHeader(key !== null);
+      if (this.header !== null) this.state = "recording";
+    }
+
+    // Longitud conocida: se decodifica al llegar al final de cada copia posible.
+    if (this.header !== null) {
+      while (this.copiesTried < MAX_COPIES) {
+        const copyEnd = this.dataStart + (this.copiesTried + 1) * this.header.samples;
+        if (this.size < copyEnd + DECODE_MARGIN) break;
+        this.copiesTried++;
+        const result = await this.decode(null, key, guard);
+        if (result.message !== null || result.rejected !== null || this.copiesTried === MAX_COPIES) {
+          // Se salta tambien el chirp final, aunque aun no haya llegado: a este umbral
+          // pareceria un inicio y crearia una deteccion falsa.
+          this.finish(copyEnd + GUARD + CHIRP_LEN + SYMBOL, results, result);
+          return true;
+        }
+      }
+    }
+
+    // Busca en el audio nuevo el chirp final y, sin longitud, otro chirp de inicio.
+    const tooLong = this.size >= this.maxSamples;
+    if (this.size - this.checkedUpTo >= this.endCheckEvery || tooLong) {
+      const from = Math.max(this.dataStart, this.checkedUpTo - CHIRP_LEN);
+      const audio = this.audio.subarray(0, Math.min(this.size, this.maxSamples));
+      const end = firstChirp(audio, from, true, this.window, END_THRESHOLD);
+      this.checkedUpTo = this.size;
+      // Los tonos de un mensaje real tambien superan el umbral de inicio: solo se busca
+      // otro inicio cuando ya se probo a leer la longitud con todos los perfiles.
+      let restart = null;
+      if (this.header === null && this.triedHeader.size === RECEIVE_ORDER.length) {
+        restart = firstChirp(audio, this.restartFrom, false, this.window, SYNC_THRESHOLD);
+        this.restartFrom = Math.max(this.dataStart, this.size - CHIRP_LEN);
+      }
+      if (restart !== null && (end === null || restart < end)) {
+        this.finish(Math.max(0, restart - SYMBOL), results, null);
+        return true;
+      }
+      if (end !== null) {
+        this.finish(end + CHIRP_LEN + SYMBOL, results, await this.decode(end, key, guard));
+        return true;
+      }
+    }
+
+    if (this.header === null && this.size - this.start >= NO_HEADER_SECONDS * FS) {
+      this.finish(this.size - 2 * CHIRP_LEN, results, null);
+      return true;
+    }
+    if (tooLong) {
+      this.finish(this.maxSamples, results, await this.decode(null, key, guard));
+      return true;
+    }
+    return false;
   }
 
   // Recibe muestras a FS y devuelve { state, results, message, profile, rejected, failed }.
@@ -1081,46 +1220,100 @@ export class StreamReceiver {
 
     for (;;) {
       if (this.state === "idle") {
-        const start = this.buffer.length >= CHIRP_LEN ? firstChirp(this.buffer, 0, false, this.window) : null;
+        const skipped = Math.min(this.skip, this.size);
+        this.drop(skipped);
+        this.skip -= skipped;
+        const start = this.size >= CHIRP_LEN ? firstChirp(this.audio, 0, false, this.window, SYNC_THRESHOLD) : null;
         if (start === null) {
           // Se guarda lo justo para no partir un chirp que siga en el proximo trozo.
-          this.keepTail(2 * CHIRP_LEN);
+          if (this.size > 2 * CHIRP_LEN) this.drop(this.size - 2 * CHIRP_LEN);
           break;
         }
-        this.buffer = this.buffer.slice(Math.max(0, start - SYMBOL));
-        this.state = "recording";
-        this.endSearchFrom = CHIRP_LEN + GUARD;
-        this.checkedUpTo = this.endSearchFrom;
+        // Un chirp a medio llegar ya supera el umbral en una posicion adelantada: se
+        // espera a tenerlo entero y se toma el maximo, que es la posicion verdadera.
+        const settled = start + 2 * CHIRP_LEN;
+        if (this.size < settled) {
+          if (start > SYMBOL) this.drop(start - SYMBOL);
+          break;
+        }
+        const peak = findChirpInternal(toFloat64Array(this.audio.subarray(start, settled)), false);
+        this.beginCandidate(start + peak.index);
       }
-
-      const tooLong = this.buffer.length >= this.maxSamples;
-      if (this.buffer.length - this.checkedUpTo < this.endCheckEvery && !tooLong) break;
-
-      // Busca el chirp final solo en el audio nuevo (con un chirp de solape).
-      const from = Math.max(this.endSearchFrom, this.checkedUpTo - CHIRP_LEN);
-      const limit = Math.min(this.buffer.length, this.maxSamples);
-      const end = firstChirp(this.buffer.subarray(0, limit), from, true, this.window);
-      this.checkedUpTo = this.buffer.length;
-      if (end === null && !tooLong) break;
-
-      const cut = end !== null ? Math.min(this.buffer.length, end + CHIRP_LEN + SYMBOL) : limit;
-      const result = { message: null, profile: null, rejected: null, failed: false };
-      const onStatus = (status) => {
-        if (status.decoded) result.profile = status.profile;
-      };
-      result.message = await receive(this.buffer.subarray(0, cut), key, onStatus, guard);
-      if (result.message === null) {
-        if (guard !== null && guard.lastReason !== null) result.rejected = guard.lastReason;
-        else result.failed = true;
-      }
-      results.push(result);
-      this.buffer = this.buffer.slice(cut);
-      this.state = "idle";
+      if (!(await this.advance(key, guard, results))) break;
     }
 
     const first = results[0] || { message: null, profile: null, rejected: null, failed: false };
     return { state: this.state, results, ...first };
   }
+}
+
+// Una sesion de escucha: remuestrea, decodifica en orden y avisa con onEvent. Es lo que
+// corre en el hilo aparte (receptor.js). El audio que llega mientras decodifica espera
+// en cola y se procesa junto, asi que nunca hay dos decodificaciones a la vez.
+export class LiveSession {
+  constructor(captureRate, onEvent, { maxSeconds = 90 } = {}) {
+    this.resampler = new Resampler(captureRate, FS);
+    this.receiver = new StreamReceiver({ maxSeconds });
+    this.guard = new ReplayGuard();
+    this.onEvent = onEvent;
+    this.pending = [];
+    this.running = false;
+    this.resetRequested = false;
+  }
+
+  // Descarta lo recibido. Si hay una decodificacion en curso, su resultado se ignora.
+  reset() {
+    this.pending = [];
+    this.resetRequested = true;
+    if (!this.running) this.applyReset();
+  }
+
+  applyReset() {
+    this.resetRequested = false;
+    this.receiver.reset();
+    this.onEvent({ results: [], state: "idle", progress: null, encrypted: false });
+  }
+
+  feed(samples, key, replayCheck) {
+    this.pending.push(samples);
+    this.key = key;
+    this.replayCheck = replayCheck;
+    if (!this.running) this.run();
+  }
+
+  async run() {
+    this.running = true;
+    while (this.pending.length > 0 || this.resetRequested) {
+      if (this.resetRequested) {
+        this.applyReset();
+        continue;
+      }
+      const batch = concatSamples(this.pending);
+      this.pending = [];
+      const key = this.key;
+      const guard = key !== null && this.replayCheck ? this.guard : null;
+      try {
+        const { results, state } = await this.receiver.push(this.resampler.push(batch), key, guard);
+        if (!this.resetRequested) {
+          this.onEvent({ results, state, progress: this.receiver.progress, encrypted: key !== null });
+        }
+      } catch (error) {
+        this.receiver.reset();
+        this.onEvent({ results: [], state: "idle", progress: null, encrypted: false, error: error.message });
+      }
+    }
+    this.running = false;
+  }
+}
+
+function concatSamples(parts) {
+  const out = new Float32Array(parts.reduce((n, part) => n + part.length, 0));
+  let offset = 0;
+  for (const part of parts) {
+    out.set(part, offset);
+    offset += part.length;
+  }
+  return out;
 }
 
 // Remuestreo lineal en flujo: conserva la posicion fraccionaria y la ultima muestra

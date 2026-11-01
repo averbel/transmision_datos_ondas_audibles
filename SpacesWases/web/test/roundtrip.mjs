@@ -200,7 +200,7 @@ for (const frames of [1, 2, 3, 6]) {
   const name = `módem con símbolos de ${frames} trama(s)`;
   try {
     const data = makeMessage(64);
-    const got = demodulate(modulate(data, frames), null, frames);
+    const got = demodulate(modulate(data, frames), frames);
     if (got !== null && equalBytes(got, data)) pass(name);
     else fail(name);
   } catch (error) {
@@ -333,6 +333,42 @@ function gaussian(rng) {
       pass(`WAV inválido rechazado: ${label}`);
     }
   }
+}
+
+{
+  // Entradas inválidas: error claro, nunca una señal o un mensaje a medias.
+  const noises = async (label, action) => {
+    try {
+      await action();
+      fail(`entrada inválida rechazada: ${label}`, "no lanzó error");
+    } catch {
+      pass(`entrada inválida rechazada: ${label}`);
+    }
+  };
+  await noises("perfil desconocido", () => send(new Uint8Array(1), null, "ultra"));
+  await noises("repeat 0", () => send(new Uint8Array(1), null, "fast", 0));
+  await noises("mensaje demasiado largo", () => send(new Uint8Array(13000), null, "fast"));
+  await noises("frames 0", () => modulate(new Uint8Array(1), 0));
+  await noises("WAV corto", () => wavDecode(new Uint8Array(4)));
+  await noises("no es WAV", () => wavDecode(new Uint8Array(44)));
+  const wav = wavEncode(new Float32Array(100));
+  const mutated = (mutate) => {
+    const bytes = wav.slice();
+    mutate(new DataView(bytes.buffer));
+    return bytes;
+  };
+  await noises("WAV de 8 bits", () => wavDecode(mutated((v) => v.setUint16(34, 8, true))));
+  await noises("WAV a otra frecuencia", () => wavDecode(mutated((v) => v.setUint32(24, 44100, true))));
+  await noises("WAV sin bloque fmt", () => wavDecode(mutated((v) => v.setUint32(12, 0x61746164, false))));
+
+  // La caché de claves está limitada y seguir usando una clave que salió de ella funciona.
+  const message = encoder.encode("clave vuelta a derivar");
+  const firstKey = encoder.encode("frase 0");
+  const signal = await send(message, firstKey, "fast");
+  for (let i = 1; i <= 9; i++) await send(message, encoder.encode(`frase ${i}`), "fast");
+  const back = await receive(signal, firstKey);
+  if (back !== null && equalBytes(back, message)) pass("caché de claves limitada: la clave expulsada se vuelve a derivar");
+  else fail("caché de claves limitada: la clave expulsada se vuelve a derivar");
 }
 
 console.log("");

@@ -7,7 +7,7 @@
   <meta name="description" content="SpaceWases: envía y recibe texto por sonido entre dispositivos cercanos, con el altavoz y el micrófono.">
   <meta name="theme-color" content="#141414">
   <title>SpaceWases</title>
-  <link rel="stylesheet" href="style.css?v=20261031h">
+  <link rel="stylesheet" href="style.css?v=20261101a">
 </head>
 <body>
   <div class="app">
@@ -28,7 +28,8 @@
 
       <div class="statusline">
         <span id="rx-status" class="rx-status" role="status">Micrófono apagado</span>
-        <progress id="tx-progress" class="tx-progress" max="1" value="0" hidden></progress>
+        <progress id="tx-progress" class="tx-progress" max="1" value="0" aria-label="Avance del envío" hidden></progress>
+        <progress id="rx-progress" class="tx-progress rx-progress" max="1" value="0" aria-label="Avance de la recepción" hidden></progress>
         <button id="cancel-rx" type="button" class="small" hidden>Detener</button>
         <button id="listen" type="button" class="small">Activar micrófono</button>
       </div>
@@ -109,6 +110,6 @@
     </section>
   </div>
 
-  <script type="module" src="app.js?v=20261031h"></script>
+  <script type="module" src="app.js?v=20261101a"></script>
 </body>
 </html>

@@ -180,13 +180,17 @@ def test_mensajes_cortos_no_se_rellenan(size):
 
 
 def test_busqueda_de_alineacion_recupera_datos_adelantados():
-    """Si los datos llegan antes de lo que indica el chirp, solo la busqueda los recupera."""
+    """Los datos llegan antes de lo que indica el chirp: el tramo hasta el fin se queda corto."""
     from spacewases import modem
     msg = _mensaje(40, seed=31)
     signal = send(msg, None, "normal")
     # Quita 500 muestras justo despues del chirp: los datos llegan 500 muestras antes.
     early = np.concatenate([signal[:modem.CHIRP_LEN], signal[modem.CHIRP_LEN + 500:]])
-    assert receive(early, None, offsets=(0,)) is None
+    s, data_start, data_end = modem.synchronize(early)
+    raw = modem.demodulate_synced((s, data_start, data_end), frames=api.FRAMES["normal"])
+    assert frame.decode_stream(raw, None, [api.PROFILES["normal"]]) is None
+    # Lo recupera repetir sin el fin de datos, con o sin desplazar la ventana.
+    assert receive(early, None, offsets=(0,)) == msg
     assert receive(early, None) == msg
 
 
@@ -264,6 +268,47 @@ def test_prefijo_ciclico_resiste_eco():
     assert errores(0) > 20
 
 
+def test_sin_chirp_final_decodifica_por_la_longitud():
+    from spacewases import modem
+    msg = _mensaje(16, seed=50)
+    signal = send(msg, None, "fast")
+    assert receive(signal[:-modem.CHIRP_LEN], None) == msg
+
+
+def test_fin_falso_no_corta_el_mensaje():
+    """Un chirp invertido dentro de los datos no debe impedir decodificar."""
+    from spacewases import modem
+    msg = _mensaje(16, seed=51)
+    signal = send(msg, None, "robust").astype(np.float64)[:-modem.CHIRP_LEN]
+    falso = modem._chirp()[::-1]
+    # Sobre el ultimo tramo de paridad: Reed-Solomon corrige los simbolos que pisa.
+    pos = len(signal) - modem.GUARD - 2 * len(falso)
+    signal[pos:pos + len(falso)] += 3.0 * falso
+    assert modem.synchronize(signal)[2] < pos
+    assert receive(signal, None) == msg
+
+
+def test_chirp_debil_se_detecta_sobre_ruido():
+    """Entre el umbral nuevo (0,12) y el anterior (0,25), como los chirps debiles por aire."""
+    from spacewases import modem
+    rng = np.random.default_rng(52)
+    msg = _mensaje(16, seed=52)
+    signal = send(msg, None, "robust").astype(np.float64)
+    sigma = np.sqrt(np.mean(signal ** 2) * 10 ** (18 / 10))
+    noisy = signal + rng.normal(0, sigma, signal.shape)
+    score = modem._find_chirp(noisy)[1]
+    assert modem.SYNC_THRESHOLD <= score < modem.END_THRESHOLD
+    assert receive(noisy, None) == msg
+
+
+def test_ruido_no_supera_el_umbral_de_inicio():
+    from spacewases import modem
+    rng = np.random.default_rng(53)
+    window = 2 * modem.CHIRP_LEN + 4096
+    best = max(modem._find_chirp(rng.normal(0, 0.1, window))[1] for _ in range(50))
+    assert best < modem.SYNC_THRESHOLD
+
+
 def test_mensaje_vacio():
     assert receive(send(b"", None, "normal"), None) == b""
 
@@ -297,3 +342,71 @@ def test_cli_ida_y_vuelta(tmp_path, capsysbinary):
 def test_cli_wav_invalido(tmp_path):
     from spacewases import cli
     assert cli.main(["decode", str(tmp_path / "no_existe.wav")]) == 1
+
+
+def _escribe_wav(path, data, channels=1, width=2, rate=48000):
+    import wave
+    with wave.open(str(path), "wb") as wav:
+        wav.setnchannels(channels)
+        wav.setsampwidth(width)
+        wav.setframerate(rate)
+        wav.writeframes(data)
+
+
+@pytest.mark.parametrize("width, rate", [(1, 48000), (2, 44100)])
+def test_cli_rechaza_formato(tmp_path, width, rate):
+    from spacewases import cli
+    path = tmp_path / "x.wav"
+    _escribe_wav(path, bytes(2000), width=width, rate=rate)
+    assert cli.main(["decode", str(path)]) == 1
+
+
+def test_cli_lee_wav_estereo(tmp_path, capsysbinary):
+    from spacewases import cli
+    pcm = (send(b"estereo", None, "fast") * 32767).astype("<i2")
+    path = tmp_path / "s.wav"
+    _escribe_wav(path, np.stack([pcm, pcm], axis=1).tobytes(), channels=2)
+    assert cli.main(["decode", str(path)]) == 0
+    assert capsysbinary.readouterr().out == b"estereo\n"
+
+
+def test_perfil_desconocido():
+    with pytest.raises(ValueError):
+        send(b"x", None, "ultra")
+
+
+@pytest.mark.parametrize("kwargs", [
+    {"payload": bytes(49)},
+    {"msg_id": 256},
+    {"frag_total": 0},
+    {"frag_idx": 1},
+    {"session": b"corta", "key": b"k"},
+])
+def test_fragmento_invalido(kwargs):
+    args = {"msg_id": 1, "frag_idx": 0, "frag_total": 1, "payload": b"x",
+            "key": None, "profile_id": 0, "chunk": 48}
+    with pytest.raises(ValueError):
+        frame.encode_fragment(**{**args, **kwargs})
+
+
+@pytest.mark.parametrize("plain", [b"", b"\x00" * 20, bytes([frame.MAGIC, 0x31]) + bytes(20),
+                                   bytes([frame.MAGIC, 0x10, 1, 0, 1, 200]) + bytes(10)])
+def test_trama_invalida(plain):
+    assert frame.parse_frame(plain, None) is None
+
+
+def test_silencio_no_sincroniza():
+    from spacewases import modem
+    assert modem.demodulate(np.zeros(48000)) is None
+    assert modem.synchronize(np.zeros(0)) is None
+    assert modem.synchronize(np.zeros(10)) is None
+    assert receive(np.zeros(48000), None) is None
+
+
+def test_modular_vacio_y_datos_uint8():
+    from spacewases import modem
+    assert modem.demodulate(modem.modulate(b"")) == b""
+    data = np.frombuffer(b"\x01\x02\x03", dtype=np.uint8)
+    assert modem.demodulate(modem.modulate(data)) == b"\x01\x02\x03"
+    with pytest.raises(ValueError):
+        modem.modulate(b"x", frames=0)

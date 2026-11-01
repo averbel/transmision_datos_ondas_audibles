@@ -42,7 +42,13 @@ CHIRP_F1 = 6000.0
 GUARD = 384
 SYMBOL_RAMP = 64
 TONE_AMP = 0.36
-SYNC_THRESHOLD = 0.25
+# Umbrales del chirp. El de inicio es bajo porque por aire hay mensajes decodificables con
+# el chirp en 0,07-0,12, y una falsa deteccion casi no cuesta: el bloque de longitud, con su
+# Reed-Solomon, la descarta. El de fin es alto porque los tonos de los datos llegan a 0,14:
+# un fin falso cortaria el mensaje, y perder el fin no impide decodificar porque el bloque
+# de longitud delimita los fragmentos.
+SYNC_THRESHOLD = 0.07
+END_THRESHOLD = 0.25
 
 _CHIRP: np.ndarray | None = None
 
@@ -175,7 +181,7 @@ def synchronize(signal) -> tuple[np.ndarray, int, int] | None:
     data_end = len(s)
     if data_start < len(s):
         end_found = _find_chirp(s[data_start:], reverse=True)
-        if end_found is not None and end_found[1] >= SYNC_THRESHOLD:
+        if end_found is not None and end_found[1] >= END_THRESHOLD:
             data_end = data_start + end_found[0] - GUARD
     return s, data_start, data_end
 

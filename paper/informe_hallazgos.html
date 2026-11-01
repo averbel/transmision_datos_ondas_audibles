@@ -54,6 +54,8 @@
 <thead><tr><th style="width:40%">Indicador</th><th>Antes</th><th>Después</th><th class="n">Evidencia</th></tr></thead>
 <tbody>
 <tr><td>Mensajes recibidos (16 B, 180 ensayos)</td><td>9 de 180</td><td>157 de 180</td><td class="n"><span class="tipo">AIRE</span></td></tr>
+<tr><td>Mensajes por aire en el mismo audio, con el volumen más bajo (serie de validación)</td><td>36 de 90</td><td>54 de 90</td><td class="n"><span class="tipo">AIRE</span></td></tr>
+<tr><td>Robusto con ruido blanco: SNR mínima con éxito total</td><td>&minus;16 dB</td><td>&minus;20 dB</td><td class="n"><span class="tipo">SIM</span></td></tr>
 <tr><td>Acierto de byte antes de Reed&ndash;Solomon</td><td>0,44 (1 trama)</td><td>0,86 (3 tramas); 0,93&ndash;0,95 (6 tramas)</td><td class="n"><span class="tipo">AIRE</span></td></tr>
 <tr><td>Tasa neta con 16 B (Robusto / Normal / Rápido)</td><td>12,4 / 21,1 / 24,1 bps</td><td>17,4 / 27,8 / 33,4 bps</td><td class="n"><span class="tipo">SIM</span></td></tr>
 <tr><td>Dos mensajes con audio en trozos de 1 a 4 s</td><td>0 de 2</td><td>2 de 2</td><td class="n"><span class="tipo">SIM</span></td></tr>
@@ -63,7 +65,7 @@
 <tr><td>Contraste del texto de los botones</td><td>3,96:1</td><td>5,93:1</td><td class="n"><span class="tipo">CÓDIGO</span></td></tr>
 </tbody>
 </table>
-<p class="nota">La fila del bloqueo no compara condiciones iguales: el resultado de después se obtuvo con bloqueos más largos, es decir, más exigentes. Los tiempos se midieron en el portátil de pruebas; en un móvil serán mayores.</p>
+<p class="nota">La fila del bloqueo no compara condiciones iguales: el resultado de después se obtuvo con bloqueos más largos, es decir, más exigentes. Los tiempos se midieron en el portátil de pruebas; en un móvil serán mayores. Las filas de 157 de 180 y de 54 de 90 no se comparan entre sí: la segunda se midió otro día, con el volumen del sistema más bajo.</p>
 
 <h2>2. Canal por aire</h2>
 <table>
@@ -96,6 +98,10 @@
 <tr><td>La captura con <code>ScriptProcessor</code> corre en el hilo de la página y pierde audio si este se bloquea.</td><td><span class="tipo">NAV</span> Sin bloqueo, 3 de 3. Con un bloqueo de 1,5 s se perdió el mensaje Normal.</td><td>Captura con <code>AudioWorklet</code>, en el hilo de audio, con cola. <code>ScriptProcessor</code> queda como respaldo.</td><td><span class="tipo">NAV</span> 3 de 3 con dos bloqueos de 3 s. También 3 de 3 en la web publicada, con un bloqueo de 3 s.</td></tr>
 <tr><td>Buscar el chirp con una sola FFT de toda la grabación congelaba la página.</td><td><span class="tipo">CÓDIGO</span> 6,5 s sobre 90 s de audio; una decodificación fallida de 90 s, 10,6 s; un mensaje Robusto de 36 s, 1,9 s.</td><td>Correlación por bloques de 65&nbsp;536 muestras (solapar y guardar), con posición exacta comprobada en las fronteras.</td><td><span class="tipo">CÓDIGO</span> 0,77 s, 1,8 s y 0,5 s, respectivamente.</td></tr>
 <tr><td>Con un micrófono que no trabaja a 48 kHz, cada lote se remuestreaba por separado y se perdía la fase.</td><td><span class="tipo">SIM</span> A 16 kHz no decodificó ninguno de 6 casos. A 44,1 kHz, sin ruido, sí.</td><td>Remuestreador continuo entre trozos, y uso de la frecuencia del sistema si el navegador rechaza 48 kHz.</td><td><span class="tipo">SIM</span> Decodifica a 16 y 44,1 kHz. El respaldo para Firefox no se probó en Firefox.</td></tr>
+<tr><td>Umbral del chirp demasiado alto: con poco volumen, los mensajes se perdían sin aviso aunque se pudieran decodificar.</td><td><span class="tipo">AIRE</span> Grabación con poco volumen: 0 de 3. Chirps de 0,07&ndash;0,22 frente a un umbral de 0,25; el ambiente de la sala no pasa de 0,042.</td><td>Umbral de inicio de 0,07. El bloque de longitud descarta las falsas detecciones, que apenas cuestan.</td><td><span class="tipo">AIRE</span> Validación con audio nuevo: de 36 a 54 de 90, sin ningún mensaje erróneo ni peor. Sin candidatos falsos en 60 s de ruido.</td></tr>
+<tr><td>El receptor dependía del chirp final: si llegaba débil, seguía grabando y mezclaba el mensaje con el siguiente.</td><td><span class="tipo">AIRE</span> Con un umbral intermedio, «hola fast» desaparecía porque su chirp final puntuaba 0,148.</td><td>Lee el bloque de longitud, calcula dónde acaba el mensaje y decodifica al llegar ahí. Si un fin falso corta el mensaje, reintenta sin él.</td><td><span class="tipo">AIRE</span> 3 de 3 en esa grabación. El mensaje sale unos 0,17 s antes. La línea de estado muestra el porcentaje real.</td></tr>
+<tr><td>Una falsa detección dejaba el receptor grabando hasta 90 s.</td><td><span class="tipo">CÓDIGO</span> Revisión del receptor.</td><td>Sin longitud válida queda como candidato invisible: se abandona a los 30 s, o antes si aparece otro inicio.</td><td><span class="tipo">SIM</span> Una falsa detección seguida de un mensaje recibe el mensaje, sin error.</td></tr>
+<tr><td>Decodificar en el hilo de la página la congelaba, y el búfer se copiaba entero en cada trozo.</td><td><span class="tipo">CÓDIGO</span> Peor trozo de 67 ms en la grabación con volumen alto, además del tiempo de decodificar.</td><td>Decodificación en un <code>Worker</code>, con respaldo en la página, y búfer que dobla su capacidad.</td><td><span class="tipo">NAV</span> 3 de 3 con un bloqueo de 6 s, una falsa detección y un mensaje débil. Peor trozo de 6 ms.</td></tr>
 <tr><td>En el móvil, al apagarse la pantalla el navegador puede cortar el micrófono.</td><td>Riesgo conocido; no se midió en un móvil real.</td><td>La web pide mantener la pantalla encendida mientras escucha y avisa si pasa a segundo plano.</td><td><span class="tipo">NAV</span> Se pide y se suelta bien. Falta confirmarlo en un móvil.</td></tr>
 <tr><td>Un mensaje que no se decodificaba apenas dejaba rastro.</td><td><span class="tipo">CÓDIGO</span> Solo cambiaba la línea de estado.</td><td>Los fallos y rechazos quedan en el historial, con una sugerencia.</td><td>Permite distinguir si los tonos llegaron dañados (línea roja) o si no se detectó el inicio (nada).</td></tr>
 </tbody>
@@ -108,6 +114,7 @@
 <tr><td>El mensaje viajaba sin cifrar y no había protección contra la reproducción de una grabación.</td><td><span class="tipo">CÓDIGO</span> Revisión del formato de trama.</td><td>Con clave: cifrado HMAC-SHA256 en modo contador, etiqueta de 8 bytes y sesión con marca de tiempo y nonce. <code>ReplayGuard</code> opcional, con ventana de 120 s.</td><td>Mismo resultado en Python y JavaScript. La construcción es propia y no la ha auditado un tercero.</td></tr>
 <tr><td>Una clave débil se podía atacar por fuerza bruta con facilidad.</td><td><span class="tipo">CÓDIGO</span> La clave se usaba sin derivación lenta.</td><td>PBKDF2-HMAC-SHA256 con 600 000 iteraciones.</td><td>Vector común en las pruebas de ambos lenguajes. Una frase débil sigue siendo débil.</td></tr>
 <tr><td><code>ReplayGuard</code> en JavaScript conservaba el motivo del rechazo anterior.</td><td><span class="tipo">CÓDIGO</span> Encontrado en pruebas.</td><td>El motivo se reinicia en cada recepción.</td><td>Corregido.</td></tr>
+<tr><td>Si faltaba Web Crypto, los nonces se generaban con <code>Math.random</code>, que no es seguro. Además, la caché guardaba sin límite todas las claves probadas.</td><td><span class="tipo">CÓDIGO</span> Vistos al revisar la cobertura.</td><td>Sin Web Crypto, la web falla en lugar de degradar. Caché limitada a 8 claves, sin guardar los fallos.</td><td>Respaldo eliminado, con prueba de la caché. Los navegadores actuales tienen Web Crypto, así que en la práctica no llegaba a usarse.</td></tr>
 <tr><td>Se aceptaban archivos WAV con cabeceras incoherentes o de tamaño ilimitado.</td><td><span class="tipo">CÓDIGO</span> Auditoría antes de publicar.</td><td>Se rechazan los WAV que no son PCM o tienen la cabecera incoherente, y los de más de 100 MB.</td><td>Tres pruebas nuevas.</td></tr>
 <tr><td>Una web pública necesitaba cabeceras de seguridad.</td><td><span class="tipo">CÓDIGO</span> Auditoría antes de publicar.</td><td>Política de contenido, página no incrustable, <code>nosniff</code>, sin <i>referrer</i> y micrófono solo para el propio sitio.</td><td>Comprobadas en producción.</td></tr>
 </tbody>
@@ -142,6 +149,9 @@
 <li><b>Fiarse de la simulación.</b> El 100 % con ruido blanco no anticipaba el 5 % por aire, porque ese ruido no modela la reverberación. Se añadió a las pruebas un modelo de cola de sala, además de medir por aire.</li>
 <li><b>Serie por aire incompleta.</b> La serie de <code>aire_resultados.csv</code> quedó en 168 de 180 ensayos y en condiciones no controladas, y no se usa como resultado.</li>
 <li><b>Grabaciones que no valen como prueba.</b> Una grabación a ganancia 0,25 salió casi en silencio (RMS 0,002, chirp por debajo del umbral), y otra usaba el formato anterior al bloque de longitud. Ninguna se contó. Con ganancia 1,0, una grabación nueva dio 3 de 3 con el receptor en flujo, aunque con nivel bajo (RMS ~0,004).</li>
+<li><b>Errores propios al bajar el umbral.</b> Las pruebas nuevas detectaron tres: el receptor se quedaba con un chirp a medio llegar, en una posición adelantada; los tonos de los datos parecían un inicio nuevo y reiniciaban la recepción; y el chirp final de un mensaje creaba una detección falsa. Se corrigieron antes de medir el resultado final.</li>
+<li><b>Elegir el umbral con los mismos datos que lo validan.</b> El umbral de 0,07 se eligió con una serie de 90 mensajes, así que se grabó otra nueva para validarlo: dio de 36 a 54, frente a 35 a 56 en la primera. El resultado se mantiene, pero sigue siendo el mismo equipo y la misma sala.</li>
+<li><b>Una prueba que suponía de más.</b> Una prueba afirmaba que solo la búsqueda de alineación recuperaba los datos adelantados. El fallo real era que el recorte por el chirp final perdía el último símbolo, y el reintento lo arregla.</li>
 <li><b>Proyecto de más en Vercel.</b> Al vincular desde la carpeta equivocada se creó el proyecto <code>averbels-projects/repo</code>, conectado a GitHub. Se desconectó GitHub en los dos proyectos antes de que se publicara nada, y se comprobó que no había despliegues. Falta borrarlo a mano.</li>
 <li><b>Afirmaciones corregidas al revisar.</b> Un borrador del artículo decía que ninguna causa de pérdida era del canal, algo que no se midió. Y las notas decían que Waver usa por defecto su modo más largo: el código muestra que usa <i>Audible Fast</i>, de 6 tramas, como Robusto. La decisión se mantiene.</li>
 </ul>
@@ -152,7 +162,8 @@
 <li><b>Otros equipos y salas.</b> El número de tramas y la paridad se eligieron con mediciones de un solo equipo y pueden estar ajustados a él.</li>
 <li><b>Tonos con mala respuesta.</b> No hay ecualización ni selección adaptativa de tonos.</li>
 <li><b>Procesado de audio del móvil.</b> El navegador puede aplicar supresión de ruido aunque la página pida desactivarla. No se ha medido.</li>
-<li><b>Falsas detecciones.</b> Un ruido parecido al chirp deja el receptor grabando hasta 90 s. No se midió con qué frecuencia ocurre ni qué pasa con un mensaje real que llegue entretanto.</li>
+<li><b>Falsas detecciones en salas reales.</b> Con el umbral de 0,07 solo se midieron 30 s de una sala tranquila y sonidos sintéticos. Falta probar con voz y música reales cerca del micrófono. Un sonido que imite también el chirp final puede dar un aviso falso de señal no decodificada.</li>
+<li><b>Volumen muy bajo.</b> A ganancia 0,03, con el volumen de estas series, no se recibió ningún mensaje: el chirp no pasa de 0,046, igual que el ruido de la sala.</li>
 <li><b>Tasa.</b> SpaceWases transmite 1 byte por símbolo y ggwave 3. No se ha comparado con ggwave por aire en el mismo equipo, así que no se afirma ninguna ventaja.</li>
 </ul>
 
@@ -160,11 +171,11 @@
 <table>
 <thead><tr><th style="width:42%">Material</th><th>Contenido</th></tr></thead>
 <tbody>
-<tr><td><code>SpacesWases/aire_2026-10-31*.csv</code></td><td>Datos de las series por aire y de la búsqueda de alineación</td></tr>
+<tr><td><code>SpacesWases/aire_2026-*.csv</code></td><td>Datos de las series por aire, de la búsqueda de alineación y de la comparación de receptores</td></tr>
 <tr><td><code>SpacesWases/diagnostico_aire/</code></td><td>Scripts del diagnóstico por aire</td></tr>
-<tr><td><code>SpacesWases/tests/</code> y <code>SpacesWases/web/test/</code></td><td>46 pruebas en Python y 63 en JavaScript</td></tr>
+<tr><td><code>SpacesWases/tests/</code> y <code>SpacesWases/web/test/</code></td><td>71 pruebas en Python y 84 en JavaScript</td></tr>
 <tr><td><code>CONTINUAR.md</code></td><td>Registro detallado, en orden cronológico</td></tr>
-<tr><td>https://spacewases.vercel.app</td><td>Web publicada, con estas correcciones</td></tr>
+<tr><td>https://spacewases.vercel.app</td><td>Web publicada; <code>CONTINUAR.md</code> indica qué mejoras incluye</td></tr>
 </tbody>
 </table>
 

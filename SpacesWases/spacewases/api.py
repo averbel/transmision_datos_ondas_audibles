@@ -57,14 +57,19 @@ def receive(signal, key: bytes | None = None,
     que Reed-Solomon y la etiqueta acepten un mensaje. Pasa un frame.ReplayGuard (compartido entre llamadas) para
     rechazar repeticiones y mensajes viejos; sin el, no hay proteccion contra
     repeticion.
+
+    Si un fin de datos falso corto el mensaje, repite sin el: el bloque de longitud
+    ya delimita los fragmentos.
     """
     sync = modem.synchronize(signal)
     if sync is None:
         return None
-    for name in _RECEIVE_ORDER:
-        for offset in offsets:
-            raw = modem.demodulate_synced(sync, frames=FRAMES[name], offset=offset)
-            result = frame.decode_stream(raw, key, [PROFILES[name]], guard)
-            if result is not None:
-                return result
+    s, data_start, data_end = sync
+    for end in dict.fromkeys((data_end, len(s))):
+        for name in _RECEIVE_ORDER:
+            for offset in offsets:
+                raw = modem.demodulate_synced((s, data_start, end), frames=FRAMES[name], offset=offset)
+                result = frame.decode_stream(raw, key, [PROFILES[name]], guard)
+                if result is not None:
+                    return result
     return None
