@@ -1,5 +1,5 @@
 // Pruebas del receptor en flujo: se le pasa el audio en trozos, como llega del microfono.
-import { send, StreamReceiver, LiveSession, ReplayGuard, Resampler, FS, CHIRP_LEN } from "../spacewases.js";
+import { send, StreamReceiver, LiveSession, SendQueue, ReplayGuard, Resampler, FS, CHIRP_LEN } from "../spacewases.js";
 
 let passed = 0;
 let failed = 0;
@@ -98,7 +98,7 @@ await check("dos mensajes seguidos con perfiles distintos", async () => {
 
 await check("mensaje de más de 32 s (antes no cabía en la ventana)", async () => {
   const rng = makeRng(3);
-  const text = "x".repeat(150);
+  const text = "x".repeat(500);
   const sig = await send(enc.encode(text), null, "robust");
   if (sig.length / FS <= 32) return `la señal dura solo ${(sig.length / FS).toFixed(1)} s`;
   const audio = concat([noise(1, 0.01, rng), sig, noise(1, 0.01, rng)]);
@@ -160,6 +160,171 @@ await check("dos mensajes en un mismo trozo: salen los dos, en orden", async () 
   const ev = await new StreamReceiver().push(audio);
   const texts = ev.results.map((r) => (r.message ? `${dec.decode(r.message)}/${r.profile}` : "fallo"));
   return JSON.stringify(texts) === JSON.stringify(["uno/fast", "dos/normal"]) || JSON.stringify(texts);
+});
+
+// Reloj simulado para los turnos: sleep avanza el tiempo sin esperar de verdad.
+class VirtualTime {
+  constructor() {
+    this.t = 0;
+    this.waiting = [];
+    this.now = () => this.t;
+    this.sleep = (ms) => new Promise((resolve) => this.waiting.push({ at: this.t + ms, resolve }));
+  }
+
+  async run() {
+    for (let idle = 0; idle < 5; idle++) {
+      await new Promise((resolve) => setImmediate(resolve));
+      if (this.waiting.length === 0) continue;
+      idle = -1;
+      this.waiting.sort((a, b) => a.at - b.at);
+      const next = this.waiting.shift();
+      this.t = next.at;
+      next.resolve();
+    }
+  }
+}
+
+await check("cola: con el canal libre emite enseguida y en orden", async () => {
+  const time = new VirtualTime();
+  const sent = [];
+  const queue = new SendQueue({
+    isBusy: () => false,
+    transmit: async (item) => {
+      sent.push(`${item}@${time.t}`);
+      await time.sleep(1000);
+    },
+    random: () => 0.5,
+    backoffMs: 1000,
+    now: time.now,
+    sleep: time.sleep,
+  });
+  queue.push("uno");
+  queue.push("dos");
+  await time.run();
+  // El segundo deja antes el retardo aleatorio, para dar paso a quien esperara.
+  return JSON.stringify(sent) === JSON.stringify(["uno@0", "dos@1500"]) || JSON.stringify(sent);
+});
+
+await check("cola: espera mientras alguien emite y sigue esperando si vuelve a estar ocupado", async () => {
+  const time = new VirtualTime();
+  const sent = [];
+  // Ocupado hasta 2 s, libre durante el retardo y otra vez ocupado de 2,2 a 4 s.
+  const isBusy = () => time.t < 2000 || (time.t >= 2200 && time.t < 4000);
+  const queue = new SendQueue({
+    isBusy,
+    transmit: async (item) => sent.push(`${item}@${time.t}`),
+    random: () => 0.5,
+    backoffMs: 1000,
+    now: time.now,
+    sleep: time.sleep,
+  });
+  queue.push("hola");
+  await time.run();
+  const at = Number(sent[0].split("@")[1]);
+  return (sent.length === 1 && at >= 4000 && !isBusy()) || JSON.stringify(sent);
+});
+
+await check("cola: no espera para siempre si el canal no se libera", async () => {
+  const time = new VirtualTime();
+  const sent = [];
+  const queue = new SendQueue({
+    isBusy: () => true,
+    transmit: async (item) => sent.push(`${item}@${time.t}`),
+    maxWaitMs: 5000,
+    now: time.now,
+    sleep: time.sleep,
+  });
+  queue.push("hola");
+  await time.run();
+  return (sent.length === 1 && Number(sent[0].split("@")[1]) >= 5000) || JSON.stringify(sent);
+});
+
+await check("cola: el mensaje escrito mientras se emite sale después, sin perderse", async () => {
+  const time = new VirtualTime();
+  const sent = [];
+  const queue = new SendQueue({
+    isBusy: () => false,
+    transmit: async (item) => {
+      sent.push(item);
+      if (item === "uno") queue.push("dos");
+      await time.sleep(1000);
+    },
+    random: () => 0,
+    now: time.now,
+    sleep: time.sleep,
+  });
+  queue.push("uno");
+  await time.run();
+  return JSON.stringify(sent) === JSON.stringify(["uno", "dos"]) || JSON.stringify(sent);
+});
+
+// Dos dispositivos que esperan a que termine un tercero. Cada uno tarda LAG en oír al otro.
+const COLLISION_LAG = 250;
+const EMISSION = 2750;
+let collisionRate = 0;
+
+await check("turnos: dos dispositivos que esperan suelen no chocar y ninguno pierde el turno", async () => {
+  const rng = makeRng(21);
+  const trials = 400;
+  let collisions = 0;
+  for (let trial = 0; trial < trials; trial++) {
+    const time = new VirtualTime();
+    const starts = [null, null];
+    const hears = (other) => {
+      if (time.t < 1000) return true; // El tercero emite durante el primer segundo.
+      const s = starts[other];
+      return s !== null && time.t >= s + COLLISION_LAG && time.t < s + EMISSION + COLLISION_LAG;
+    };
+    const device = (me) =>
+      new SendQueue({
+        isBusy: () => hears(1 - me),
+        transmit: async () => {
+          starts[me] = time.t;
+          await time.sleep(EMISSION);
+        },
+        random: rng,
+        now: time.now,
+        sleep: time.sleep,
+      });
+    device(0).push("a");
+    device(1).push("b");
+    await time.run();
+    if (starts[0] === null || starts[1] === null) return `turno ${trial}: alguien no emitió`;
+    if (Math.abs(starts[0] - starts[1]) < EMISSION) collisions++;
+  }
+  collisionRate = collisions / trials;
+  console.log(`     colisiones con dos esperando: ${(100 * collisionRate).toFixed(1)} %`);
+  return collisionRate < 0.25 || `${(100 * collisionRate).toFixed(1)} %`;
+});
+
+await check("ocupado: se avisa desde que llega el chirp y se libera al terminar", async () => {
+  const rng = makeRng(22);
+  const sig = await send(enc.encode("turno"), null, "normal");
+  const audio = concat([noise(0.5, 0.01, rng), sig, noise(0.5, 0.01, rng)]);
+  const receiver = new StreamReceiver();
+  const chirpEnd = Math.round(0.5 * FS) + CHIRP_LEN;
+  const signalEnd = Math.round(0.5 * FS) + sig.length;
+  let firstBusy = null;
+  let lastBusy = null;
+  for (let off = 0; off < audio.length; off += 2048) {
+    await receiver.push(audio.subarray(off, off + 2048));
+    if (receiver.busy) {
+      firstBusy ??= off + 2048;
+      lastBusy = off + 2048;
+    }
+  }
+  const lag = (firstBusy - chirpEnd) / FS;
+  if (firstBusy === null) return "nunca estuvo ocupado";
+  if (lag > 0.1) return `tarda ${lag.toFixed(2)} s desde el final del chirp`;
+  return (lastBusy >= signalEnd - 5000 && !receiver.busy) || `último ocupado ${lastBusy}, fin ${signalEnd}`;
+});
+
+await check("ocupado: una falsa detección solo bloquea hasta probar la longitud", async () => {
+  const rng = makeRng(23);
+  const sig = await send(enc.encode("x"), null, "fast");
+  const receiver = new StreamReceiver();
+  await stream(receiver, concat([noise(0.5, 0.01, rng), sig.subarray(0, CHIRP_LEN), noise(3, 0.01, rng)]), rng);
+  return (receiver.state === "candidate" && !receiver.busy) || `estado ${receiver.state}, ocupado ${receiver.busy}`;
 });
 
 await check("sonidos que no son mensajes: ningún mensaje ni error, y vuelve a reposo", async () => {
@@ -275,7 +440,7 @@ await check("clave equivocada: falla una vez y sigue recibiendo", async () => {
 
 await check("grabación larga: el búfer no se copia en cada trozo", async () => {
   const receiver = new StreamReceiver();
-  const sig = await send(enc.encode("x".repeat(150)), null, "robust");
+  const sig = await send(enc.encode("x".repeat(500)), null, "robust");
   const started = performance.now();
   let worst = 0;
   for (let off = 0; off < sig.length; off += 4096) {

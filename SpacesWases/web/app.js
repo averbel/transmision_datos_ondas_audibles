@@ -8,7 +8,8 @@ import {
   FS,
   signalSeconds,
   LiveSession,
-} from "./spacewases.js?v=20261101a";
+  SendQueue,
+} from "./spacewases.js?v=20261101b";
 
 const PROFILE_LABELS = {
   robust: "Robusto",
@@ -218,8 +219,13 @@ function setRxStatus(text, kind = "") {
   else delete rxStatus.dataset.kind;
 }
 
+function queueNote() {
+  return sendQueue.length > 0 ? `, ${sendQueue.length} en cola` : "";
+}
+
 function idleStatus() {
-  if (listening) setRxStatus("Escuchando ondas (longitud variable)…");
+  if (sendQueue.length > 0) setRxStatus(`Esperando turno para enviar${queueNote()}…`, "send");
+  else if (listening) setRxStatus("Escuchando ondas (longitud variable)…");
   else setRxStatus("Micrófono apagado");
 }
 
@@ -242,9 +248,12 @@ async function ensurePlaybackContext() {
   return playbackContext;
 }
 
-async function buildSignal() {
-  const signal = await send(encoder.encode(sendText.value), keyBytes(), profile, repeatCount());
-  const gain = volume();
+function composeItem() {
+  return { text: sendText.value, key: keyBytes(), profile, repeat: repeatCount(), gain: volume() };
+}
+
+async function buildSignal({ text, key, profile: itemProfile, repeat, gain }) {
+  const signal = await send(encoder.encode(text), key, itemProfile, repeat);
   if (gain !== 1) for (let i = 0; i < signal.length; i++) signal[i] *= gain;
   return signal;
 }
@@ -261,7 +270,6 @@ function showTxProgress(context, startTime, seconds) {
 
 function finishTransmission() {
   transmitting = false;
-  emitButton.disabled = false;
   txProgress.hidden = true;
   txProgress.value = 0;
   // Lo que el micrófono captó durante la emisión es nuestra propia señal: se descarta.
@@ -269,14 +277,14 @@ function finishTransmission() {
   idleStatus();
 }
 
-sendForm.addEventListener("submit", async (event) => {
-  event.preventDefault();
-  if (transmitting || sendText.value.length === 0) return;
+// Emite un mensaje de la cola. La señal se genera aquí, justo antes de sonar, para que su
+// marca de tiempo sea la de la emisión y no la de cuando se escribió.
+async function transmit(item) {
   transmitting = true;
-  emitButton.disabled = true;
+  clearLiveAudio();
   setRxStatus("Generando señal…", "send");
   try {
-    const signal = await buildSignal();
+    const signal = await buildSignal(item);
     const context = await ensurePlaybackContext();
     const buffer = context.createBuffer(1, signal.length, FS);
     buffer.getChannelData(0).set(signal);
@@ -284,18 +292,35 @@ sendForm.addEventListener("submit", async (event) => {
     source.buffer = buffer;
     source.connect(context.destination);
     const seconds = signal.length / FS;
-    addLogEntry({ direction: "Send", profileName: profile, encrypted: keyBytes() !== null, text: sendText.value });
-    sendText.value = "";
-    updateComposer();
-    setRxStatus(`Enviando ${formatSeconds(seconds)} s`, "send");
-    source.onended = finishTransmission;
+    addLogEntry({ direction: "Send", profileName: item.profile, encrypted: item.key !== null, text: item.text });
+    setRxStatus(`Enviando ${formatSeconds(seconds)} s${queueNote()}`, "send");
+    const ended = new Promise((resolve) => {
+      source.onended = resolve;
+    });
     const startTime = context.currentTime;
     source.start();
     showTxProgress(context, startTime, seconds);
+    await ended;
   } catch (error) {
-    finishTransmission();
     addLogEntry({ direction: "Error", text: `No se pudo enviar: ${error.message}`, error: true });
   }
+  finishTransmission();
+}
+
+const sendQueue = new SendQueue({
+  isBusy: () => receiverBusy,
+  transmit,
+  onChange: () => {
+    if (!transmitting && !rxActive) idleStatus();
+  },
+});
+
+sendForm.addEventListener("submit", (event) => {
+  event.preventDefault();
+  if (sendText.value.length === 0) return;
+  sendQueue.push(composeItem());
+  sendText.value = "";
+  updateComposer();
 });
 
 let downloadBusy = false;
@@ -310,7 +335,7 @@ downloadButton.addEventListener("click", async () => {
   downloadButton.disabled = true;
   fileStatus.textContent = "Preparando WAV…";
   try {
-    const wav = wavEncode(await buildSignal());
+    const wav = wavEncode(await buildSignal(composeItem()));
     const url = URL.createObjectURL(new Blob([wav], { type: "audio/wav" }));
     const link = document.createElement("a");
     link.href = url;
@@ -334,6 +359,8 @@ downloadButton.addEventListener("click", async () => {
 
 let captureRate = FS;
 let liveReceiver = null;
+let receiverBusy = false;
+let rxActive = false;
 let listening = false;
 let starting = false;
 let micContext = null;
@@ -345,6 +372,8 @@ let analyserNode = null;
 
 function clearLiveAudio() {
   if (liveReceiver) liveReceiver.reset();
+  receiverBusy = false;
+  rxActive = false;
   cancelRxButton.hidden = true;
   rxProgress.hidden = true;
 }
@@ -354,7 +383,7 @@ function createLiveReceiver(rate) {
   let supportsModuleWorker = false;
   let worker = null;
   if (window.Worker) {
-    worker = new Worker("receptor.js?v=20261101a", {
+    worker = new Worker("receptor.js?v=20261101b", {
       get type() {
         supportsModuleWorker = true;
         return "module";
@@ -487,7 +516,7 @@ async function startListening() {
     // ocupada; ScriptProcessor queda para navegadores sin AudioWorklet.
     if (micContext.audioWorklet && window.AudioWorkletNode) {
       try {
-        await micContext.audioWorklet.addModule("captura.js?v=20261101a");
+        await micContext.audioWorklet.addModule("captura.js?v=20261101b");
         processorNode = new AudioWorkletNode(micContext, "captura", { outputChannelCount: [1] });
         processorNode.port.onmessage = (event) => onAudio(event.data);
       } catch {
@@ -569,8 +598,10 @@ function handleReceiverEvent(event) {
     }
   }
   if (transmitting) return;
-  if (event.state === "recording") {
-    setRxStatus(`Recibiendo… ${Math.round(event.progress * 100)} %`, "busy");
+  receiverBusy = event.busy;
+  rxActive = event.state === "recording";
+  if (rxActive) {
+    setRxStatus(`Recibiendo… ${Math.round(event.progress * 100)} %${queueNote()}`, "busy");
     rxProgress.value = event.progress;
     rxProgress.hidden = false;
     cancelRxButton.hidden = false;

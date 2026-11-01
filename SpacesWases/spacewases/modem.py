@@ -1,10 +1,9 @@
-"""Capa fisica MFSK: dos tonos por simbolo (un byte), con chirps de sincronia.
+"""Capa fisica MFSK: seis tonos por simbolo (tres bytes), con chirps de sincronia.
 
-La banda audible dispone de 96 bins de 46.875 Hz desde 1875 Hz. Se usan dos
-grupos de 16 tonos separados 6 bins (grupo A en 40+6k, grupo B en 43+6k).
-Cada simbolo transmite un nibble por grupo, es decir, un byte. La alternativa
-de 6 tonos por simbolo (3 bytes) se descarta para mantener baja la interferencia
-entre grupos.
+La banda audible dispone de 96 bins de 46.875 Hz desde 1875 Hz, repartidos en 6
+grupos contiguos de 16 tonos. Cada simbolo transmite un nibble por grupo, es decir,
+tres bytes. Por aire acierta casi lo mismo que un byte por simbolo, con el triple de
+datos (diagnostico_aire/air_tonos.py).
 
 Cada simbolo va precedido de un prefijo ciclico de CYCLIC_PREFIX muestras: como
 cada tono completa un numero entero de ciclos en SYMBOL muestras, el prefijo es
@@ -30,10 +29,10 @@ CYCLIC_PREFIX = 256
 BIN_HZ = FS / SYMBOL
 BASE_BIN = 40
 N_TONES = 16
-TONE_STEP = 6
+BYTES_PER_SYMBOL = 3
 
-GROUP_A = [BASE_BIN + TONE_STEP * k for k in range(N_TONES)]
-GROUP_B = [BASE_BIN + 3 + TONE_STEP * k for k in range(N_TONES)]
+GROUPS = [[BASE_BIN + N_TONES * g + k for k in range(N_TONES)]
+          for g in range(2 * BYTES_PER_SYMBOL)]
 
 CHIRP_MS = 150.0
 CHIRP_LEN = int(FS * CHIRP_MS / 1000.0)
@@ -41,10 +40,10 @@ CHIRP_F0 = 1500.0
 CHIRP_F1 = 6000.0
 GUARD = 384
 SYMBOL_RAMP = 64
-TONE_AMP = 0.36
+TONE_AMP = 0.16  # Los 6 tonos juntos nunca saturan.
 # Umbrales del chirp. El de inicio es bajo porque por aire hay mensajes decodificables con
 # el chirp en 0,07-0,12, y una falsa deteccion casi no cuesta: el bloque de longitud, con su
-# Reed-Solomon, la descarta. El de fin es alto porque los tonos de los datos llegan a 0,14:
+# Reed-Solomon, la descarta. El de fin es alto porque los tonos de los datos llegan a 0,16:
 # un fin falso cortaria el mensaje, y perder el fin no impide decodificar porque el bloque
 # de longitud delimita los fragmentos.
 SYNC_THRESHOLD = 0.07
@@ -116,18 +115,20 @@ def _tone_matrix(bins: list[int], lead: int, length: int = SYMBOL) -> np.ndarray
 
 
 def modulate(data_in, cp: int = CYCLIC_PREFIX, frames: int = 1) -> np.ndarray:
-    """Convierte bytes (o una secuencia de enteros 0-255) en una senal float32."""
+    """Convierte bytes (o una secuencia de enteros 0-255) en una senal float32.
+
+    Si faltan bytes para completar el ultimo simbolo, se rellena con ceros.
+    """
     data = _as_bytes(data_in)
-    symbols = np.frombuffer(data, dtype=np.uint8)
-    high = symbols >> 4
-    low = symbols & 0x0F
+    data += bytes(-len(data) % BYTES_PER_SYMBOL)
+    values = np.frombuffer(data, dtype=np.uint8)
     lead, analyzed, period = _layout(cp, frames)
 
-    if len(symbols):
-        tones_a = _tone_matrix(GROUP_A, lead, analyzed * SYMBOL)
-        tones_b = _tone_matrix(GROUP_B, lead, analyzed * SYMBOL)
-        matrix = (tones_a[:, high] + tones_b[:, low]).T * _envelope(period)[None, :]
-        body = matrix.reshape(-1)
+    if len(values):
+        nibbles = np.stack([values >> 4, values & 0x0F], axis=1).reshape(-1, len(GROUPS))
+        matrix = sum(_tone_matrix(group, lead, analyzed * SYMBOL)[:, nibbles[:, g]]
+                     for g, group in enumerate(GROUPS))
+        body = (matrix.T * _envelope(period)[None, :]).reshape(-1)
     else:
         body = np.zeros(0, dtype=np.float64)
 
@@ -158,15 +159,6 @@ def _find_chirp(signal: np.ndarray, reverse: bool = False):
     score = np.abs(corr) / denom
     k = int(np.argmax(score))
     return k, float(score[k])
-
-
-def _tone_scores(spec: np.ndarray, bins: list[int]) -> np.ndarray:
-    out = np.zeros((spec.shape[0], len(bins)))
-    for i, b in enumerate(bins):
-        lo = max(b - 1, 0)
-        hi = b + 2
-        out[:, i] = spec[:, lo:hi].sum(axis=1)
-    return out
 
 
 def synchronize(signal) -> tuple[np.ndarray, int, int] | None:
@@ -217,6 +209,7 @@ def demodulate_synced(sync: tuple[np.ndarray, int, int], cp: int = CYCLIC_PREFIX
     blocks = sum(s[(idx + f * SYMBOL)[:, None] + window] for f in range(analyzed))
     blocks = blocks - blocks.mean(axis=1, keepdims=True)
     spec = np.abs(np.fft.rfft(blocks, axis=1)) ** 2
-    high = np.argmax(_tone_scores(spec, GROUP_A), axis=1)
-    low = np.argmax(_tone_scores(spec, GROUP_B), axis=1)
-    return bytes(((high << 4) | low).astype(np.uint8).tolist())
+    # Los tonos son contiguos y ortogonales en la trama: se mira solo su bin.
+    nibbles = np.stack([np.argmax(spec[:, group], axis=1) for group in GROUPS], axis=1)
+    values = (nibbles[:, 0::2] << 4) | nibbles[:, 1::2]
+    return values.astype(np.uint8).tobytes()

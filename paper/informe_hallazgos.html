@@ -58,6 +58,9 @@
 <tr><td>Robusto con ruido blanco: SNR mínima con éxito total</td><td>&minus;16 dB</td><td>&minus;20 dB</td><td class="n"><span class="tipo">SIM</span></td></tr>
 <tr><td>Acierto de byte antes de Reed&ndash;Solomon</td><td>0,44 (1 trama)</td><td>0,86 (3 tramas); 0,93&ndash;0,95 (6 tramas)</td><td class="n"><span class="tipo">AIRE</span></td></tr>
 <tr><td>Tasa neta con 16 B (Robusto / Normal / Rápido)</td><td>12,4 / 21,1 / 24,1 bps</td><td>17,4 / 27,8 / 33,4 bps</td><td class="n"><span class="tipo">SIM</span></td></tr>
+<tr><td>Tasa neta con 16 B y 3 bytes por símbolo</td><td>17,4 / 27,8 / 33,4 bps</td><td>46,6 / 71,6 / 83,6 bps</td><td class="n"><span class="tipo">SIM</span></td></tr>
+<tr><td>El mismo cambio, a volumen bajo y con mensajes alternados</td><td>12 de 45</td><td>20 de 45</td><td class="n"><span class="tipo">AIRE</span></td></tr>
+<tr><td>El mismo cambio, frente a ruido blanco (Robusto, SNR mínima)</td><td>&minus;20 dB</td><td>&minus;14 dB (peor)</td><td class="n"><span class="tipo">SIM</span></td></tr>
 <tr><td>Dos mensajes con audio en trozos de 1 a 4 s</td><td>0 de 2</td><td>2 de 2</td><td class="n"><span class="tipo">SIM</span></td></tr>
 <tr><td>Tres mensajes con la página bloqueada</td><td>2 de 3 (bloqueo de 1,5 s)</td><td>3 de 3 (dos bloqueos de 3 s)</td><td class="n"><span class="tipo">NAV</span></td></tr>
 <tr><td>Micrófono a 16 kHz, remuestreado por lotes</td><td>0 de 6 casos</td><td>Decodifica</td><td class="n"><span class="tipo">SIM</span></td></tr>
@@ -86,6 +89,7 @@
 <tr><td>Los bloques se rellenaban hasta 48 B, así que los mensajes cortos duraban de más.</td><td><span class="tipo">SIM</span> Tasa con 16 B de 12,4 / 21,1 / 24,1 bps.</td><td>Bloque de longitud con su propio Reed&ndash;Solomon (3 + 6 bytes) y fragmentos sin relleno, con la paridad completa del perfil.</td><td><span class="tipo">AIRE</span> De 142 a 157 de 180. <span class="tipo">SIM</span> 17,4 / 27,8 / 33,4 bps.</td></tr>
 <tr><td>El chirp no siempre daba la posición exacta de los símbolos.</td><td><span class="tipo">AIRE</span> 44 de 45 grabaciones decodificadas.</td><td>Si no decodifica, el receptor prueba la ventana desplazada &minus;256, &minus;512 y +256 muestras.</td><td><span class="tipo">AIRE</span> 45 de 45, sobre las mismas grabaciones.</td></tr>
 <tr><td>Error propio en esa búsqueda: la cuenta de símbolos ignoraba el desplazamiento.</td><td><span class="tipo">CÓDIGO</span> Encontrado al revisar.</td><td>Cuenta corregida en Python y JavaScript, con prueba.</td><td>La medida de 45 de 45 es anterior a esta corrección, que solo afecta a los intentos desplazados.</td></tr>
+<tr><td>La tasa era baja: 1 byte por símbolo, frente a los 3 de ggwave.</td><td><span class="tipo">AIRE</span> Con 6 tonos contiguos, acierto de byte de 0,80 frente a 0,81 con 3 tramas, y de 0,86 frente a 0,91 con 6 tramas, a volumen alto.</td><td>3 bytes por símbolo en los tres protocolos: 6 grupos contiguos de 16 tonos, con menos amplitud por tono.</td><td><span class="tipo">AIRE</span> A volumen bajo, alternando mensajes, de 12 a 20 de 45. <span class="tipo">SIM</span> Tasa casi 3 veces mayor; pierde unos 6 dB frente al ruido blanco.</td></tr>
 </tbody>
 </table>
 
@@ -102,6 +106,7 @@
 <tr><td>El receptor dependía del chirp final: si llegaba débil, seguía grabando y mezclaba el mensaje con el siguiente.</td><td><span class="tipo">AIRE</span> Con un umbral intermedio, «hola fast» desaparecía porque su chirp final puntuaba 0,148.</td><td>Lee el bloque de longitud, calcula dónde acaba el mensaje y decodifica al llegar ahí. Si un fin falso corta el mensaje, reintenta sin él.</td><td><span class="tipo">AIRE</span> 3 de 3 en esa grabación. El mensaje sale unos 0,17 s antes. La línea de estado muestra el porcentaje real.</td></tr>
 <tr><td>Una falsa detección dejaba el receptor grabando hasta 90 s.</td><td><span class="tipo">CÓDIGO</span> Revisión del receptor.</td><td>Sin longitud válida queda como candidato invisible: se abandona a los 30 s, o antes si aparece otro inicio.</td><td><span class="tipo">SIM</span> Una falsa detección seguida de un mensaje recibe el mensaje, sin error.</td></tr>
 <tr><td>Decodificar en el hilo de la página la congelaba, y el búfer se copiaba entero en cada trozo.</td><td><span class="tipo">CÓDIGO</span> Peor trozo de 67 ms en la grabación con volumen alto, además del tiempo de decodificar.</td><td>Decodificación en un <code>Worker</code>, con respaldo en la página, y búfer que dobla su capacidad.</td><td><span class="tipo">NAV</span> 3 de 3 con un bloqueo de 6 s, una falsa detección y un mensaje débil. Peor trozo de 6 ms.</td></tr>
+<tr><td>Dos dispositivos que emitían a la vez se tapaban, y un mensaje escrito mientras se emitía o recibía tenía que esperar a mano.</td><td><span class="tipo">AIRE</span> Una señal 30 dB más débil que otra en la otra mitad de la banda baja a 66 % de acierto por nibble: recibir mientras se emite no es viable.</td><td>Turnos: cola de envío, escucha antes de hablar y retardo aleatorio de 0 a 3 s.</td><td><span class="tipo">SIM</span> Con dos esperando a la vez chocan un 18,8 %. <span class="tipo">NAV</span> Los mensajes escritos durante una recepción salen después, en orden. Falta probarlo entre dos dispositivos.</td></tr>
 <tr><td>En el móvil, al apagarse la pantalla el navegador puede cortar el micrófono.</td><td>Riesgo conocido; no se midió en un móvil real.</td><td>La web pide mantener la pantalla encendida mientras escucha y avisa si pasa a segundo plano.</td><td><span class="tipo">NAV</span> Se pide y se suelta bien. Falta confirmarlo en un móvil.</td></tr>
 <tr><td>Un mensaje que no se decodificaba apenas dejaba rastro.</td><td><span class="tipo">CÓDIGO</span> Solo cambiaba la línea de estado.</td><td>Los fallos y rechazos quedan en el historial, con una sugerencia.</td><td>Permite distinguir si los tonos llegaron dañados (línea roja) o si no se detectó el inicio (nada).</td></tr>
 </tbody>
@@ -128,7 +133,7 @@
 <tr><td>Texto de los botones con poco contraste.</td><td><span class="tipo">CÓDIGO</span> 3,96:1, mínimo WCAG de 4,5:1. Los otros 13 pares cumplían.</td><td>Verde más oscuro.</td><td>5,93:1.</td></tr>
 <tr><td>El navegador usaba un JavaScript viejo guardado en caché.</td><td>Visto al probar la web.</td><td>Archivos con versión (<code>?v=</code>), que se cambia al publicar.</td><td>Carga siempre la versión publicada, si se cambia la versión.</td></tr>
 <tr><td>Dos errores de estilo tras rehacer la interfaz: el botón Detener se veía estando oculto y la pestaña activa perdía su color al pasar el ratón.</td><td><span class="tipo">NAV</span> Vistos en la revisión con capturas.</td><td>Reglas de CSS corregidas.</td><td>Corregido en escritorio y móvil.</td></tr>
-<tr><td>El protocolo por defecto, Normal, equivalía al más rápido de ggwave.</td><td><span class="tipo">AIRE</span> Robusto 54, Normal 50 y Rápido 53 de 60. Con tan pocos ensayos, la diferencia es pequeña.</td><td>Robusto por defecto, con 6 tramas, igual que el modo por defecto de Waver.</td><td>Más lento: 16 B tardan 7,4 s, frente a 4,6 s.</td></tr>
+<tr><td>El protocolo por defecto, Normal, equivalía al más rápido de ggwave.</td><td><span class="tipo">AIRE</span> Robusto 54, Normal 50 y Rápido 53 de 60. Con tan pocos ensayos, la diferencia es pequeña.</td><td>Robusto por defecto, con 6 tramas, igual que el modo por defecto de Waver.</td><td>Más lento: con el formato actual, 16 B tardan 2,75 s, frente a 1,79 s.</td></tr>
 </tbody>
 </table>
 
@@ -140,6 +145,8 @@
 <tr><td>Restar la cola del símbolo anterior (DFE)</td><td><span class="tipo">AIRE</span> Nibble de ~72 a ~85 %. <span class="tipo">SIM</span> A &minus;10 dB, Robusto bajó de 100 a 62 % y Normal de 100 a 3 %.</td><td>Descartada: ayudaba en esta sala y perjudicaba con ruido.</td></tr>
 <tr><td>Alargar el prefijo cíclico</td><td><span class="tipo">AIRE</span> Acierto de byte de 0,35 sin prefijo a 0,50 (256), 0,52 (512), 0,28 (1024, sin explicar), 0,70 (2048) y 0,72 (4096).</td><td>Insuficiente. Se optó por varias tramas.</td></tr>
 <tr><td>Normalizar la ganancia de cada tono</td><td><span class="tipo">AIRE</span> Nibble de 72 a 72&ndash;82 %.</td><td>Descartada: poca mejora.</td></tr>
+<tr><td>Dos bandas para hablar a la vez</td><td><span class="tipo">AIRE</span> A igual nivel, 92 % por nibble frente a 93 % sola; con 30 dB de desnivel, 66 % frente a 81 %. Y dividiría la velocidad entre dos.</td><td>Descartada: se usan turnos.</td></tr>
+<tr><td>Tonos intercalados por toda la banda, con 3 bytes por símbolo</td><td><span class="tipo">AIRE</span> Acierto de byte de 0,63 con 3 tramas y 0,83 con 6, frente a 0,80 y 0,86 con los tonos contiguos.</td><td>Descartada.</td></tr>
 <tr><td>Diversidad: el mismo dato en los dos grupos de tonos</td><td><span class="tipo">AIRE</span> Nibble de 0,81 a 0,90, pero con la mitad de bits por símbolo.</td><td>No adoptada.</td></tr>
 </tbody>
 </table>
@@ -151,6 +158,7 @@
 <li><b>Grabaciones que no valen como prueba.</b> Una grabación a ganancia 0,25 salió casi en silencio (RMS 0,002, chirp por debajo del umbral), y otra usaba el formato anterior al bloque de longitud. Ninguna se contó. Con ganancia 1,0, una grabación nueva dio 3 de 3 con el receptor en flujo, aunque con nivel bajo (RMS ~0,004).</li>
 <li><b>Errores propios al bajar el umbral.</b> Las pruebas nuevas detectaron tres: el receptor se quedaba con un chirp a medio llegar, en una posición adelantada; los tonos de los datos parecían un inicio nuevo y reiniciaban la recepción; y el chirp final de un mensaje creaba una detección falsa. Se corrigieron antes de medir el resultado final.</li>
 <li><b>Elegir el umbral con los mismos datos que lo validan.</b> El umbral de 0,07 se eligió con una serie de 90 mensajes, así que se grabó otra nueva para validarlo: dio de 36 a 54, frente a 35 a 56 en la primera. El resultado se mantiene, pero sigue siendo el mismo equipo y la misma sala.</li>
+<li><b>Una comparación demasiado buena.</b> Grabar una serie de cada formato, una tras otra, dio 85 frente a 61 de 90 a favor del nuevo. Durante la serie del formato nuevo la sala estaba unos 3,5 dB más silenciosa, así que se repitió turnando mensajes en la misma sesión: 20 frente a 12 de 45. La ventaja es menor y con tan pocos mensajes no es concluyente, pero muestra que no empeora.</li>
 <li><b>Una prueba que suponía de más.</b> Una prueba afirmaba que solo la búsqueda de alineación recuperaba los datos adelantados. El fallo real era que el recorte por el chirp final perdía el último símbolo, y el reintento lo arregla.</li>
 <li><b>Proyecto de más en Vercel.</b> Al vincular desde la carpeta equivocada se creó el proyecto <code>averbels-projects/repo</code>, conectado a GitHub. Se desconectó GitHub en los dos proyectos antes de que se publicara nada, y se comprobó que no había despliegues. Falta borrarlo a mano.</li>
 <li><b>Afirmaciones corregidas al revisar.</b> Un borrador del artículo decía que ninguna causa de pérdida era del canal, algo que no se midió. Y las notas decían que Waver usa por defecto su modo más largo: el código muestra que usa <i>Audible Fast</i>, de 6 tramas, como Robusto. La decisión se mantiene.</li>
@@ -164,7 +172,8 @@
 <li><b>Procesado de audio del móvil.</b> El navegador puede aplicar supresión de ruido aunque la página pida desactivarla. No se ha medido.</li>
 <li><b>Falsas detecciones en salas reales.</b> Con el umbral de 0,07 solo se midieron 30 s de una sala tranquila y sonidos sintéticos. Falta probar con voz y música reales cerca del micrófono. Un sonido que imite también el chirp final puede dar un aviso falso de señal no decodificada.</li>
 <li><b>Volumen muy bajo.</b> A ganancia 0,03, con el volumen de estas series, no se recibió ningún mensaje: el chirp no pasa de 0,046, igual que el ruido de la sala.</li>
-<li><b>Tasa.</b> SpaceWases transmite 1 byte por símbolo y ggwave 3. No se ha comparado con ggwave por aire en el mismo equipo, así que no se afirma ninguna ventaja.</li>
+<li><b>Mensajes perdidos sin aviso.</b> Dos dispositivos que arrancan casi a la vez aún chocan, y al no haber acuse de recibo el emisor no se entera.</li>
+<li><b>Comparación con ggwave.</b> Ambos transmiten ya 3 bytes por símbolo, pero no se han comparado por aire en el mismo equipo, así que no se afirma ninguna ventaja.</li>
 </ul>
 
 <h2>10. Dónde verificarlo</h2>
@@ -173,7 +182,7 @@
 <tbody>
 <tr><td><code>SpacesWases/aire_2026-*.csv</code></td><td>Datos de las series por aire, de la búsqueda de alineación y de la comparación de receptores</td></tr>
 <tr><td><code>SpacesWases/diagnostico_aire/</code></td><td>Scripts del diagnóstico por aire</td></tr>
-<tr><td><code>SpacesWases/tests/</code> y <code>SpacesWases/web/test/</code></td><td>71 pruebas en Python y 84 en JavaScript</td></tr>
+<tr><td><code>SpacesWases/tests/</code> y <code>SpacesWases/web/test/</code></td><td>71 pruebas en Python y 91 en JavaScript</td></tr>
 <tr><td><code>CONTINUAR.md</code></td><td>Registro detallado, en orden cronológico</td></tr>
 <tr><td>https://spacewases.vercel.app</td><td>Web publicada; <code>CONTINUAR.md</code> indica qué mejoras incluye</td></tr>
 </tbody>

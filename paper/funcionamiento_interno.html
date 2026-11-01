@@ -47,7 +47,7 @@
   <p class="aff">Universidad de la Costa (CUC), Barranquilla, Colombia &middot; averbel1@cuc.edu.co &middot; 1 de noviembre de 2026</p>
 </header>
 
-<p>SpaceWases envía texto entre dos dispositivos usando solo sonido: uno convierte el mensaje en tonos audibles y el otro los escucha con el micrófono y los vuelve a convertir en texto. Este documento explica cómo lo hace la web publicada en https://spacewases.vercel.app, desde que alguien pulsa Enviar hasta que el mensaje aparece en el otro dispositivo. Describe la versión publicada el 1 de noviembre de 2026, con los valores que usa el código.</p>
+<p>SpaceWases envía texto entre dos dispositivos usando solo sonido: uno convierte el mensaje en tonos audibles y el otro los escucha con el micrófono y los vuelve a convertir en texto. Este documento explica cómo lo hace la web publicada en https://spacewases.vercel.app, desde que alguien pulsa Enviar hasta que el mensaje aparece en el otro dispositivo. Describe la versión con 3 bytes por símbolo y turnos automáticos, con los valores que usa el código.</p>
 
 <h2>1. Visión general</h2>
 <p>La aplicación es una página estática: no tiene servidor ni base de datos, y los mensajes no pasan por internet. Vercel solo entrega los archivos; después, todo ocurre en el navegador de cada dispositivo. Los mensajes viajan únicamente por el aire de la sala.</p>
@@ -75,7 +75,7 @@
 <figcaption>Fig. 1. Recorrido de un mensaje. Cada paso del emisor tiene su paso inverso en el receptor.</figcaption>
 </figure>
 
-<p>Un byte se transmite como un sonido de dos tonos simultáneos. Como el aire de una sala introduce ruido y eco, el diseño añade tres defensas: símbolos largos, para que el eco no contamine el siguiente; Reed–Solomon, para corregir los bytes dañados; y unos barridos de frecuencia llamados <i>chirps</i>, para saber dónde empieza el mensaje.</p>
+<p>Cada sonido lleva 3 bytes, en seis tonos simultáneos. Como el aire de una sala introduce ruido y eco, el diseño añade tres defensas: símbolos largos, para que el eco no contamine el siguiente; Reed–Solomon, para corregir los bytes dañados; y unos barridos de frecuencia llamados <i>chirps</i>, para saber dónde empieza el mensaje.</p>
 
 <h3>Los archivos de la web</h3>
 <table>
@@ -123,6 +123,7 @@
 <li><b>Cabecera.</b> Seis bytes: marca fija <code>0xA5</code>, versión y perfil, identificador del mensaje, número de fragmento, total de fragmentos y longitud del trozo.</li>
 <li><b>Bloque de longitud.</b> Va primero y dice el perfil y la longitud total. Tiene su propia paridad: corrige hasta 3 de sus 9 bytes. Permite calcular de antemano dónde acaba el mensaje, y su validez distingue un mensaje real de una falsa detección.</li>
 <li><b>Reed–Solomon.</b> Trabaja sobre GF(256) con el polinomio <code>0x11D</code> y añade paridad a cada fragmento. Con <i>r</i> bytes de paridad corrige hasta <i>r</i>/2 bytes erróneos, estén donde estén, y falla si hay más.</li>
+<li><b>Símbolos enteros.</b> Cada símbolo lleva 3 bytes, así que cada copia se completa con ceros hasta un múltiplo de 3.</li>
 <li><b>Repeticiones.</b> Si en Ajustes se eligen 2 o 3, se envía la secuencia completa de nuevo. Los fragmentos buenos de cualquier copia completan el mensaje.</li>
 </ul>
 
@@ -130,12 +131,12 @@
 <table>
 <thead><tr><th>Protocolo</th><th>Duración del símbolo</th><th>Tramas sumadas</th><th>Paridad</th><th>Corrige</th><th>16 B</th><th>Tasa con 16 B</th></tr></thead>
 <tbody>
-<tr><td>Robusto (por defecto)</td><td>128 ms</td><td>5 de 6</td><td>20 B</td><td>10 B</td><td>7,36 s</td><td>17,4 bps</td></tr>
-<tr><td>Normal</td><td>64 ms</td><td>2 de 3</td><td>32 B</td><td>16 B</td><td>4,60 s</td><td>27,8 bps</td></tr>
-<tr><td>Rápido</td><td>64 ms</td><td>2 de 3</td><td>20 B</td><td>10 B</td><td>3,84 s</td><td>33,4 bps</td></tr>
+<tr><td>Robusto (por defecto)</td><td>128 ms</td><td>5 de 6</td><td>20 B</td><td>10 B</td><td>2,75 s</td><td>46,6 bps</td></tr>
+<tr><td>Normal</td><td>64 ms</td><td>2 de 3</td><td>32 B</td><td>16 B</td><td>1,79 s</td><td>71,6 bps</td></tr>
+<tr><td>Rápido</td><td>64 ms</td><td>2 de 3</td><td>20 B</td><td>10 B</td><td>1,53 s</td><td>83,6 bps</td></tr>
 </tbody>
 </table>
-<p><b>Ejemplo.</b> Enviar 16 bytes sin clave con Robusto da un fragmento de 6 + 16 + 4 = 26 bytes más 20 de paridad, es decir, 46. Con los 9 del bloque de longitud son 55 bytes. A 128 ms cada uno suman 7,04 s, y los chirps y las guardas añaden 0,32 s: 7,36 s en total. Con clave, cabecera y etiqueta añaden 14 bytes: 69 bytes y 9,15 s.</p>
+<p><b>Ejemplo.</b> Enviar 16 bytes sin clave con Robusto da un fragmento de 6 + 16 + 4 = 26 bytes más 20 de paridad, es decir, 46. Con los 9 del bloque de longitud son 55 bytes, que caben en 19 símbolos de 3 bytes. A 128 ms cada uno suman 2,43 s, y los chirps y las guardas añaden 0,32 s: 2,75 s en total. Con clave, cabecera y etiqueta añaden 14 bytes: 69 bytes, 23 símbolos y 3,26 s.</p>
 
 <h2 style="break-before: page">3. Modulación: de los bytes al sonido</h2>
 <p class="k">El audio se genera a 48 000 muestras por segundo. La señal completa tiene esta forma:</p>
@@ -147,7 +148,7 @@
   <rect class="b" x="130" y="8" width="62" height="34"/><text class="s" x="161" y="29">símbolo 1</text>
   <rect class="b" x="192" y="8" width="62" height="34"/><text class="s" x="223" y="29">símbolo 2</text>
   <rect class="b" x="254" y="8" width="62" height="34"/><text class="s" x="285" y="29">símbolo 3</text>
-  <rect class="w" x="316" y="8" width="172" height="34"/><text class="s" x="402" y="29">… un símbolo por byte …</text>
+  <rect class="w" x="316" y="8" width="172" height="34"/><text class="s" x="402" y="29">… 3 bytes por símbolo …</text>
   <rect class="w" x="488" y="8" width="34" height="34"/><text class="s" x="505" y="29">8 ms</text>
   <rect class="d" x="522" y="8" width="96" height="34"/><text class="s" x="570" y="22">chirp final</text><text class="s" x="570" y="36">6→1,5 kHz; 150 ms</text>
   <path class="l" d="M192 42L40 74M254 42L640 74" stroke-dasharray="3 3"/>
@@ -162,9 +163,9 @@
 </svg>
 <figcaption>Fig. 3. Estructura de la señal y detalle de un símbolo de Robusto. En Normal y Rápido cada símbolo tiene 3 tramas.</figcaption>
 </figure>
-<p><b>Tonos.</b> Cada trama dura 1024 muestras, así que la FFT separa frecuencias múltiplo de 46,875 Hz, llamadas <i>bins</i>. Hay dos grupos de 16 tonos, separados entre sí 6 bins: el grupo A usa los bins 40 + 6<i>k</i> (de 1875 a 6094 Hz) y el grupo B los bins 43 + 6<i>k</i> (de 2016 a 6234 Hz). Cada byte se divide en dos mitades de 4 bits, o <i>nibbles</i>: la alta elige un tono del grupo A y la baja, uno del grupo B. Ambos suenan a la vez durante todo el símbolo.</p>
+<p><b>Tonos.</b> Cada trama dura 1024 muestras, así que la FFT separa frecuencias múltiplo de 46,875 Hz, llamadas <i>bins</i>. Se usan 96 bins seguidos, del 40 al 135 (de 1875 a 6328 Hz), repartidos en 6 grupos de 16 tonos. Cada byte se divide en dos mitades de 4 bits, o <i>nibbles</i>, y cada nibble elige un tono de su grupo. Así, un símbolo lleva 3 bytes con 6 tonos que suenan a la vez. Por aire, esta disposición acierta casi lo mismo que 1 byte por símbolo; repartir los grupos intercalados por la banda dio peor resultado.</p>
 <p><b>Por qué símbolos largos.</b> En una sala el sonido sigue rebotando un momento después de emitirse. La primera trama recibe ese eco del símbolo anterior y se descarta; las demás llevan solo el tono actual y se suman, lo que refuerza el tono frente al ruido. Es la idea de ggwave, tomada como referencia, y es lo que permitió pasar por aire de 9 a 142 mensajes de 180. Unos bordes suaves de 64 muestras evitan chasquidos entre símbolos.</p>
-<p><b>Reproducción.</b> La señal se multiplica por el volumen de Ajustes y <code>app.js</code> la reproduce con Web Audio. Mientras emite, descarta lo que capta el micrófono para no recibir su propia señal: un dispositivo no escucha mientras habla.</p>
+<p><b>Reproducción.</b> La señal se multiplica por el volumen de Ajustes y <code>app.js</code> la reproduce con Web Audio. Mientras emite, descarta lo que capta el micrófono para no recibir su propia señal.</p>
 
 <h2>4. Recepción: tres hilos</h2>
 <p>Al pulsar «Activar micrófono», la página pide permiso y solicita desactivar la cancelación de eco, la supresión de ruido y el control de ganancia, porque dañarían los tonos. Algunos navegadores pueden no respetarlo. El trabajo se reparte en tres hilos, para que uno ocupado no perjudique a los otros:</p>
@@ -191,7 +192,7 @@
 <p>El receptor compara continuamente el audio con la forma del chirp mediante una correlación normalizada, con FFT por bloques de 65 536 puntos como máximo. El resultado es una puntuación de 0 a 1 que no mide el volumen, sino cuánto destaca el chirp frente al resto del sonido. Usa dos umbrales distintos:</p>
 <ul>
 <li><b>Inicio, 0,07.</b> Es bajo a propósito. En las pruebas, el ambiente de la sala no pasó de 0,042 y los sonidos sintéticos, de 0,075. Una falsa detección casi no cuesta, porque la descarta el paso siguiente.</li>
-<li><b>Fin, 0,25.</b> Es alto porque los tonos de los datos llegan a unos 0,14, y un fin falso cortaría el mensaje.</li>
+<li><b>Fin, 0,25.</b> Es alto porque los tonos de los datos llegan a unos 0,16, y un fin falso cortaría el mensaje.</li>
 </ul>
 <p class="k">Cuando la puntuación supera el umbral, el receptor espera a tener el chirp entero y toma el máximo, porque un chirp a medio llegar ya da una posición adelantada. Después avanza por estos estados:</p>
 <figure>
@@ -216,13 +217,22 @@
 
 <h3>Demodulación y validación</h3>
 <ol>
-<li><b>Tonos a bytes.</b> En cada símbolo se suman las tramas sin la de guarda, se quita la media y se calcula la FFT. En cada grupo gana el tono con más potencia, sumando su bin y los dos vecinos. Los dos ganadores forman el byte.</li>
+<li><b>Tonos a bytes.</b> En cada símbolo se suman las tramas sin la de guarda, se quita la media y se calcula la FFT. En cada grupo gana el tono con más potencia en su bin. Cada pareja de ganadores forma un byte.</li>
 <li><b>Alineación.</b> Si no decodifica, se repite con la ventana desplazada &minus;256, &minus;512 y +256 muestras. Si un fin de datos falso cortó el mensaje, se repite sin él.</li>
 <li><b>Corrección.</b> Cada bloque pasa por Reed–Solomon por separado. Un bloque dañado no descarta a los demás.</li>
 <li><b>Validación.</b> Se comprueban la marca, la versión, el protocolo y la etiqueta. Con clave, se descifra después de comprobarla.</li>
 <li><b>Reensamblado.</b> Los fragmentos se unen por identificador y sesión. El mensaje solo se entrega cuando están todos.</li>
 <li><b>Interfaz.</b> El Worker envía el resultado a la página, que lo añade al historial como <code>hora | Recv | protocolo | texto</code>, siempre como texto y nunca como HTML.</li>
 </ol>
+
+<h3>Turnos al emitir</h3>
+<p>Un dispositivo no puede recibir mientras emite, porque su altavoz tapa al otro. Se midió por aire con cada señal en una mitad de la banda: a igual nivel se distinguen bien (92 % de acierto por nibble frente a 93 % sola), pero con la señal 30 dB más débil, una situación parecida a la de recibir mientras se emite, cae a 66 %, que Reed–Solomon no puede corregir. Además, dividir la banda costaría la mitad de la velocidad. Por eso los dispositivos se turnan:</p>
+<ol>
+<li><b>Enviar nunca se bloquea.</b> Cada mensaje entra en una cola (<code>SendQueue</code>) y la señal se genera justo antes de sonar, para que su marca de tiempo sea la de la emisión.</li>
+<li><b>Escucha antes de hablar.</b> El receptor avisa de que el canal está ocupado desde que detecta un chirp hasta que termina el mensaje. El mensaje espera.</li>
+<li><b>Retardo aleatorio.</b> Si tuvo que esperar, o si acaba de emitir, añade entre 0 y 3 s al azar y vuelve a comprobar el canal. Así, dos que esperan no suelen arrancar a la vez. Tras 100 s sale de todas formas.</li>
+</ol>
+<p>Una falsa detección solo ocupa el canal mientras se prueba a leer la longitud. En una simulación con dos dispositivos esperando a la vez chocan un 18,8 % de las veces, porque cada uno tarda unos 0,25 s en oír al otro. Si dos pulsan Enviar con el canal libre en ese mismo instante, también chocan. Los turnos solo funcionan con el micrófono activado.</p>
 
 <h2>5. Clave y seguridad</h2>
 <p>La clave es opcional. Sin ella, el mensaje viaja en claro y la etiqueta de 4 bytes usa una clave vacía: detecta errores, pero cualquiera puede fabricar un mensaje. Con clave ocurre lo siguiente:</p>
@@ -258,26 +268,27 @@
 <tr><td>Trama y FFT</td><td>1024 muestras</td><td>21,3 ms; bins de 46,875 Hz</td></tr>
 <tr><td>Chirp</td><td>7200 muestras</td><td>150 ms, de 1,5 a 6 kHz</td></tr>
 <tr><td>Guarda alrededor de los datos</td><td>384 muestras</td><td>8 ms de silencio</td></tr>
-<tr><td>Amplitud de cada tono</td><td>0,36</td><td>Dos tonos sin saturar</td></tr>
+<tr><td>Amplitud de cada tono</td><td>0,16</td><td>Seis tonos sin saturar</td></tr>
 <tr><td>Umbrales de chirp</td><td>0,07 y 0,25</td><td>Inicio y fin</td></tr>
 <tr><td>Desplazamientos de ventana</td><td>0, &minus;256, &minus;512, +256</td><td>Búsqueda de alineación</td></tr>
 <tr><td>Trozo de texto / bloque de longitud</td><td>48 B / 9 B</td><td>Fragmentación y longitud</td></tr>
 <tr><td>Copias sin chirp final / abandono / tope</td><td>3 / 30 s / 90 s</td><td>Límites de la recepción</td></tr>
+<tr><td>Retardo al azar / espera máxima para emitir</td><td>0–3 s / 100 s</td><td>Turnos</td></tr>
 </tbody>
 </table>
 
 <h2>8. Cómo se comprueba</h2>
 <ul>
-<li><b>Pruebas automáticas.</b> 71 en Python (<code>python -m pytest</code>) y 84 en JavaScript (<code>web/test/roundtrip.mjs</code> y <code>stream.mjs</code>). Incluyen WAV generados por Python y decodificados en JavaScript, salas simuladas, falsas detecciones y entradas inválidas.</li>
-<li><b>Por aire.</b> <code>diagnostico_aire/grabar_serie.py</code> graba capturas reales, y <code>comparar_receptores.mjs</code> las pasa por dos versiones del receptor sobre el mismo audio.</li>
+<li><b>Pruebas automáticas.</b> 71 en Python (<code>python -m pytest</code>) y 91 en JavaScript (<code>web/test/roundtrip.mjs</code> y <code>stream.mjs</code>). Incluyen WAV generados por Python y decodificados en JavaScript, salas simuladas, falsas detecciones, turnos con reloj simulado y entradas inválidas.</li>
+<li><b>Por aire.</b> <code>diagnostico_aire/grabar_serie.py</code> graba capturas reales, y <code>comparar_receptores.mjs</code> las pasa por dos versiones del receptor sobre el mismo audio. <code>alternar_formatos.py</code> turna mensajes de dos formatos en la misma sesión, para que el ruido del momento les afecte por igual.</li>
 <li><b>En el navegador.</b> Se sustituye el micrófono por una señal conocida, lo que prueba todo el camino, con los tres hilos.</li>
 <li><b>Publicación.</b> Se lanza a mano con <code>npx vercel deploy --prod</code> desde <code>SpacesWases/web</code>; un push a GitHub no publica nada.</li>
 </ul>
 
 <h2>9. Límites del diseño</h2>
 <ul>
-<li><b>Velocidad.</b> Con 1 byte por símbolo la tasa es de 17 a 33 bps con 16 bytes; ggwave envía 3 bytes por símbolo.</li>
-<li><b>Sentido único.</b> Un dispositivo no recibe mientras emite, y dos que emiten a la vez se interfieren.</li>
+<li><b>Velocidad y ruido.</b> Con 16 bytes la tasa es de 47 a 84 bps. Repartir la potencia entre 6 tonos cuesta unos 6 dB frente al ruido blanco: Robusto funciona desde &minus;14 dB, y Normal y Rápido desde &minus;10 dB.</li>
+<li><b>Por turnos.</b> Un dispositivo no recibe mientras emite. Dos que arrancan casi a la vez aún chocan, y no hay acuse de recibo: el emisor no se entera de que su mensaje se perdió.</li>
 <li><b>Sin adaptación al canal.</b> No hay ecualización ni selección de tonos, así que los huecos de frecuencia de un altavoz se compensan solo con símbolos largos y paridad.</li>
 <li><b>Bloque de longitud dañado.</b> Sin repeticiones, el mensaje no se puede decodificar.</li>
 <li><b>Validación.</b> Las mediciones por aire usan un portátil y una sala, y los umbrales se eligieron con ellas. Falta una serie medida entre dos dispositivos reales.</li>

@@ -7,7 +7,7 @@
   <meta name="description" content="SpaceWases: envía y recibe texto por sonido entre dispositivos cercanos, con el altavoz y el micrófono.">
   <meta name="theme-color" content="#141414">
   <title>SpaceWases</title>
-  <link rel="stylesheet" href="style.css?v=20261101a">
+  <link rel="stylesheet" href="style.css?v=20261101b">
 </head>
 <body>
   <div class="app">
@@ -23,7 +23,7 @@
 
     <section id="view-messages" class="view view-messages" role="tabpanel" aria-labelledby="tab-messages">
       <ol id="messages" class="log" aria-live="polite" aria-label="Historial de mensajes">
-        <li class="log-hint">Abre esta página en dos dispositivos cercanos. En el que recibe, activa el micrófono; en el otro, escribe y pulsa Enviar.</li>
+        <li class="log-hint">Abre esta página en dos dispositivos cercanos y activa el micrófono en los dos. Escribe y pulsa Enviar: si el otro está emitiendo, tu mensaje espera su turno.</li>
       </ol>
 
       <div class="statusline">
@@ -105,11 +105,11 @@
       <footer class="credits">
         <p>Andrés Felipe Verbel Pacheco (CUC) · licencia MIT. Diseño tomado como referencia de <a href="https://github.com/ggerganov/ggwave">ggwave</a> y Waver (MIT, © 2020 Georgi Gerganov); el código es propio.</p>
         <p>Sin clave el mensaje viaja en claro y cualquiera puede fabricar mensajes. Con clave se cifra y se autentica, pero la construcción no ha sido auditada por terceros: no la uses para información sensible. Cualquier micrófono cercano recibe la señal.</p>
-        <p>Probado por aire en un solo portátil y una sala (157 de 180 mensajes recibidos).</p>
+        <p>Probado por aire en un solo portátil y una sala (85 de 90 mensajes recibidos); falta una serie medida entre dos dispositivos.</p>
       </footer>
     </section>
   </div>
 
-  <script type="module" src="app.js?v=20261101a"></script>
+  <script type="module" src="app.js?v=20261101b"></script>
 </body>
 </html>

@@ -3,18 +3,22 @@ export const SYMBOL = 1024;
 export const CYCLIC_PREFIX = 256;
 export const BASE_BIN = 40;
 export const N_TONES = 16;
-export const TONE_STEP = 6;
+// Cada simbolo lleva 3 bytes: 6 tonos a la vez, uno por nibble, en 6 grupos contiguos de
+// 16 bins. Por aire acierta casi lo mismo que 1 byte por simbolo (air_tonos.py), con el
+// triple de datos. La amplitud es tal que los 6 tonos juntos nunca saturan.
+export const BYTES_PER_SYMBOL = 3;
+const N_GROUPS = 2 * BYTES_PER_SYMBOL;
 export const CHIRP_MS = 150;
 export const CHIRP_LEN = Math.trunc((FS * CHIRP_MS) / 1000);
 export const CHIRP_F0 = 1500;
 export const CHIRP_F1 = 6000;
 export const GUARD = 384;
 export const SYMBOL_RAMP = 64;
-export const TONE_AMP = 0.36;
+export const TONE_AMP = 0.16;
 // Umbrales del chirp (igual que en modem.py). El de inicio es bajo porque por aire hay
 // mensajes decodificables con el chirp en 0,07-0,12, y una falsa deteccion casi no cuesta:
 // el bloque de longitud, con su Reed-Solomon, la descarta. El de fin es alto porque los
-// tonos de los datos llegan a 0,14: un fin falso cortaria el mensaje, y perder el fin no
+// tonos de los datos llegan a 0,16: un fin falso cortaria el mensaje, y perder el fin no
 // impide decodificar porque la longitud ya se conoce.
 export const SYNC_THRESHOLD = 0.07;
 export const END_THRESHOLD = 0.25;
@@ -48,8 +52,10 @@ export function blockSizes(length, keyed, chunk, parity) {
   return sizes;
 }
 
+// Bytes de una copia del mensaje, redondeados a simbolos enteros.
 function sequenceLength(length, keyed, chunk, parity) {
-  return blockSizes(length, keyed, chunk, parity).reduce((n, [p, r]) => n + p + r, LEN_BLOCK);
+  const bytes = blockSizes(length, keyed, chunk, parity).reduce((n, [p, r]) => n + p + r, LEN_BLOCK);
+  return Math.ceil(bytes / BYTES_PER_SYMBOL) * BYTES_PER_SYMBOL;
 }
 
 // [id, chunk, paridad RS] de la capa de trama (igual que api.PROFILES en Python).
@@ -311,10 +317,10 @@ function makeSymbolEnvelope(period) {
   return env;
 }
 
-function makeToneTable(offset, lead, period) {
+function makeToneTable(group, lead, period) {
   const table = new Array(N_TONES);
   for (let k = 0; k < N_TONES; k++) {
-    const freq = BASE_BIN + offset + TONE_STEP * k;
+    const freq = BASE_BIN + N_TONES * group + k;
     const tone = new Float64Array(period);
     for (let n = 0; n < period; n++) {
       tone[n] = TONE_AMP * Math.sin((2 * Math.PI * (n - lead) * freq) / SYMBOL);
@@ -333,8 +339,7 @@ function symbolShape(frames) {
     shape = {
       ...layout,
       envelope: makeSymbolEnvelope(layout.period),
-      tonesA: makeToneTable(0, layout.lead, layout.period),
-      tonesB: makeToneTable(3, layout.lead, layout.period),
+      tones: Array.from({ length: N_GROUPS }, (_, group) => makeToneTable(group, layout.lead, layout.period)),
     };
     shapeCache.set(frames, shape);
   }
@@ -520,20 +525,12 @@ export function findChirp(signal, reverse = false) {
   return findChirpInternal(toFloat64Array(signal), Boolean(reverse));
 }
 
-function toneScores(power, offset) {
+// Nibble de un grupo: el tono con mas potencia. Los tonos son contiguos y ortogonales en la
+// trama, asi que se mira solo su bin.
+function strongestTone(power, group) {
+  const first = BASE_BIN + N_TONES * group;
   let best = 0;
-  let bestValue = -1;
-  for (let k = 0; k < N_TONES; k++) {
-    const bin = BASE_BIN + offset + TONE_STEP * k;
-    const lo = Math.max(bin - 1, 0);
-    const hi = bin + 2;
-    let sum = 0;
-    for (let j = lo; j < hi; j++) sum += power[j];
-    if (sum > bestValue) {
-      bestValue = sum;
-      best = k;
-    }
-  }
+  for (let k = 1; k < N_TONES; k++) if (power[first + k] > power[first + best]) best = k;
   return best;
 }
 
@@ -560,7 +557,7 @@ function demodulateSynced(sync, frames, offset = 0) {
   const count = Math.max(0, Math.trunc((dataEnd - dataStart - offset) / period));
   if (count === 0) return new Uint8Array(0);
 
-  const out = new Uint8Array(count);
+  const out = new Uint8Array(count * BYTES_PER_SYMBOL);
   const re = new Float64Array(SYMBOL);
   const im = new Float64Array(SYMBOL);
   const power = new Float64Array(SYMBOL / 2 + 1);
@@ -583,9 +580,9 @@ function demodulateSynced(sync, frames, offset = 0) {
     }
     fft(re, im, false);
     for (let i = 0; i < power.length; i++) power[i] = re[i] * re[i] + im[i] * im[i];
-    const high = toneScores(power, 0);
-    const low = toneScores(power, 3);
-    out[written++] = (high << 4) | low;
+    for (let g = 0; g < N_GROUPS; g += 2) {
+      out[written++] = (strongestTone(power, g) << 4) | strongestTone(power, g + 1);
+    }
   }
 
   return out.slice(0, written);
@@ -598,18 +595,17 @@ export function demodulate(signal, frames = 1) {
 
 export function modulate(data, frames = 1) {
   const bytes = data instanceof Uint8Array ? data : Uint8Array.from(data);
-  const { period, envelope, tonesA, tonesB } = symbolShape(frames);
-  const symbols = bytes.length;
+  const { period, envelope, tones } = symbolShape(frames);
+  const symbols = Math.ceil(bytes.length / BYTES_PER_SYMBOL);
   const total = 2 * CHIRP_LEN + 2 * GUARD + symbols * period;
   const out = new Float32Array(total);
   out.set(CHIRP, 0);
   let offset = CHIRP_LEN + GUARD;
   for (let s = 0; s < symbols; s++) {
-    const value = bytes[s];
-    const ta = tonesA[value >> 4];
-    const tb = tonesB[value & 0x0f];
-    for (let i = 0; i < period; i++) {
-      out[offset + i] = (ta[i] + tb[i]) * envelope[i];
+    for (let g = 0; g < N_GROUPS; g++) {
+      const value = bytes[s * BYTES_PER_SYMBOL + (g >> 1)] ?? 0;
+      const tone = tones[g][g % 2 === 0 ? value >> 4 : value & 0x0f];
+      for (let i = 0; i < period; i++) out[offset + i] += tone[i] * envelope[i];
     }
     offset += period;
   }
@@ -895,6 +891,8 @@ async function packMessage(msg, key, profileId, chunk, parity, msgId = null, rep
     const plain = await encodeFragment(ident, idx, sizes.length, payload, key, profileId, chunk, session);
     blocks.push(rsEncode(plain, sizes[idx][1]));
   }
+  const used = blocks.reduce((n, block) => n + block.length, 0);
+  blocks.push(new Uint8Array(sequenceLength(msg.length, key !== null, chunk, parity) - used));
   const once = concatBytes(blocks);
   return concatBytes(Array.from({ length: repeat }, () => once));
 }
@@ -974,7 +972,7 @@ export async function send(msg, key = null, profile = "normal", repeat = 1) {
 // Duracion en segundos de la senal que send() generaria (para la interfaz).
 export function signalSeconds(byteLength, profile, keyed = false, repeat = 1) {
   const [, chunk, parity] = PROFILES[profile];
-  const symbols = repeat * sequenceLength(byteLength, keyed, chunk, parity);
+  const symbols = (repeat * sequenceLength(byteLength, keyed, chunk, parity)) / BYTES_PER_SYMBOL;
   return (2 * CHIRP_LEN + 2 * GUARD + symbols * symbolLayout(FRAMES[profile]).period) / FS;
 }
 
@@ -1048,6 +1046,7 @@ export class StreamReceiver {
   reset() {
     this.state = "idle";
     this.size = 0;
+    this.startPending = false;
     this.skip = 0;
     this.start = 0;
     this.header = null;
@@ -1069,6 +1068,17 @@ export class StreamReceiver {
   get progress() {
     if (this.state !== "recording") return null;
     return Math.min(1, (this.size - this.dataStart) / this.header.samples);
+  }
+
+  // Hay alguien emitiendo: un chirp a medio confirmar o un mensaje en curso. Un candidato
+  // que ya no puede tener longitud valida no cuenta, para no bloquear los envios.
+  get busy() {
+    return (
+      this.startPending ||
+      this.skip > 0 ||
+      this.state === "recording" ||
+      (this.state === "candidate" && this.triedHeader.size < RECEIVE_ORDER.length)
+    );
   }
 
   // Duplica la capacidad al crecer: copiar toda la grabacion en cada trozo cuesta mucho
@@ -1106,17 +1116,18 @@ export class StreamReceiver {
     for (const name of RECEIVE_ORDER) {
       if (this.triedHeader.has(name)) continue;
       const { period } = symbolLayout(FRAMES[name]);
-      const blockEnd = this.dataStart + LEN_BLOCK * period + DECODE_MARGIN;
+      const blockSamples = (LEN_BLOCK / BYTES_PER_SYMBOL) * period;
+      const blockEnd = this.dataStart + blockSamples + DECODE_MARGIN;
       if (this.size < blockEnd) continue;
       this.triedHeader.add(name);
       const s = toFloat64Array(this.audio.subarray(0, blockEnd));
       const [profileId, chunk, parity] = PROFILES[name];
       for (const offset of ALIGN_OFFSETS) {
-        const dataEnd = this.dataStart + offset + LEN_BLOCK * period;
+        const dataEnd = this.dataStart + offset + blockSamples;
         const raw = demodulateSynced({ s, dataStart: this.dataStart, dataEnd }, FRAMES[name], offset);
         const length = readLength(raw, 0, profileId);
         if (length !== null) {
-          return { name, samples: sequenceLength(length, keyed, chunk, parity) * period };
+          return { name, samples: (sequenceLength(length, keyed, chunk, parity) / BYTES_PER_SYMBOL) * period };
         }
       }
     }
@@ -1227,12 +1238,14 @@ export class StreamReceiver {
         if (start === null) {
           // Se guarda lo justo para no partir un chirp que siga en el proximo trozo.
           if (this.size > 2 * CHIRP_LEN) this.drop(this.size - 2 * CHIRP_LEN);
+          this.startPending = false;
           break;
         }
         // Un chirp a medio llegar ya supera el umbral en una posicion adelantada: se
         // espera a tenerlo entero y se toma el maximo, que es la posicion verdadera.
         const settled = start + 2 * CHIRP_LEN;
-        if (this.size < settled) {
+        this.startPending = this.size < settled;
+        if (this.startPending) {
           if (start > SYMBOL) this.drop(start - SYMBOL);
           break;
         }
@@ -1271,7 +1284,7 @@ export class LiveSession {
   applyReset() {
     this.resetRequested = false;
     this.receiver.reset();
-    this.onEvent({ results: [], state: "idle", progress: null, encrypted: false });
+    this.onEvent({ results: [], state: "idle", progress: null, busy: false, encrypted: false });
   }
 
   feed(samples, key, replayCheck) {
@@ -1295,14 +1308,79 @@ export class LiveSession {
       try {
         const { results, state } = await this.receiver.push(this.resampler.push(batch), key, guard);
         if (!this.resetRequested) {
-          this.onEvent({ results, state, progress: this.receiver.progress, encrypted: key !== null });
+          const { progress, busy } = this.receiver;
+          this.onEvent({ results, state, progress, busy, encrypted: key !== null });
         }
       } catch (error) {
         this.receiver.reset();
-        this.onEvent({ results: [], state: "idle", progress: null, encrypted: false, error: error.message });
+        this.onEvent({ results: [], state: "idle", progress: null, busy: false, encrypted: false, error: error.message });
       }
     }
     this.running = false;
+  }
+}
+
+// Turnos al emitir: un dispositivo no puede recibir mientras emite, porque su altavoz tapa
+// al otro (air_duplex.py). Por eso cada mensaje espera en cola a que el canal este libre y a
+// un retardo aleatorio, y vuelve a comprobarlo antes de sonar. Asi, dos que esperan no
+// arrancan a la vez. Solo funciona con el microfono activado; sin el, isBusy siempre es falso.
+export class SendQueue {
+  constructor({
+    isBusy,
+    transmit,
+    onChange = () => {},
+    backoffMs = 3000,
+    pollMs = 100,
+    maxWaitMs = 100000,
+    random = Math.random,
+    now = () => Date.now(),
+    sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  }) {
+    Object.assign(this, { isBusy, transmit, onChange, backoffMs, pollMs, maxWaitMs, random, now, sleep });
+    this.items = [];
+    this.running = false;
+    this.mustBackOff = false;
+  }
+
+  get length() {
+    return this.items.length;
+  }
+
+  push(item) {
+    this.items.push(item);
+    this.onChange();
+    if (!this.running) this.finished = this.run();
+    return this.finished;
+  }
+
+  // Espera su turno. Si el canal estaba libre y nadie acaba de hablar, no espera nada.
+  async waitForTurn() {
+    const deadline = this.now() + this.maxWaitMs;
+    while (this.now() < deadline) {
+      if (this.isBusy()) {
+        this.mustBackOff = true;
+        await this.sleep(this.pollMs);
+        continue;
+      }
+      if (!this.mustBackOff) return;
+      this.mustBackOff = false;
+      await this.sleep(this.random() * this.backoffMs);
+      if (!this.isBusy()) return;
+    }
+  }
+
+  async run() {
+    this.running = true;
+    while (this.items.length > 0) {
+      await this.waitForTurn();
+      const item = this.items.shift();
+      this.onChange();
+      await this.transmit(item);
+      // Tras emitir se da paso a quien estuviera esperando.
+      this.mustBackOff = true;
+    }
+    this.running = false;
+    this.mustBackOff = false;
   }
 }
 

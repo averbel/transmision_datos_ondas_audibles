@@ -148,11 +148,11 @@ for (const [file, keyText, expected] of fixtures) {
 {
   const message = makeMessage(100);
   const wipeBlock = (signal) => {
-    // Anula 20 simbolos dentro del bloque 1 de la primera copia (normal: bloques de 90 simbolos).
+    // Anula 8 simbolos (24 bytes, mas de los que corrige) en el bloque 1 de la primera copia.
     const period = FRAMES.normal * SYMBOL;
-    const start = CHIRP_LEN + GUARD + 110 * period;
+    const start = CHIRP_LEN + GUARD + 40 * period;
     const out = Float32Array.from(signal);
-    out.fill(0, start, start + 20 * period);
+    out.fill(0, start, start + 8 * period);
     return out;
   };
   try {
@@ -201,7 +201,7 @@ for (const frames of [1, 2, 3, 6]) {
   try {
     const data = makeMessage(64);
     const got = demodulate(modulate(data, frames), frames);
-    if (got !== null && equalBytes(got, data)) pass(name);
+    if (got !== null && equalBytes(got.subarray(0, data.length), data)) pass(name);
     else fail(name);
   } catch (error) {
     fail(name, error.message);

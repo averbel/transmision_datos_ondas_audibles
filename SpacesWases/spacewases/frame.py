@@ -31,6 +31,7 @@ import time
 from functools import lru_cache
 
 from . import rs
+from .modem import BYTES_PER_SYMBOL
 
 MAGIC = 0xA5
 VERSION = 1
@@ -255,7 +256,9 @@ def block_sizes(length: int, key: bytes | None, chunk: int, parity: int) -> list
 
 
 def _sequence_length(length: int, key: bytes | None, chunk: int, parity: int) -> int:
-    return LEN_BLOCK + sum(p + r for p, r in block_sizes(length, key, chunk, parity))
+    """Bytes de una copia del mensaje, redondeados a simbolos enteros."""
+    size = LEN_BLOCK + sum(p + r for p, r in block_sizes(length, key, chunk, parity))
+    return math.ceil(size / BYTES_PER_SYMBOL) * BYTES_PER_SYMBOL
 
 
 def pack_message(msg: bytes, key: bytes | None, profile_id: int,
@@ -282,7 +285,9 @@ def pack_message(msg: bytes, key: bytes | None, profile_id: int,
         plain = encode_fragment(ident, idx, len(sizes), payload, key, profile_id,
                                 chunk, session)
         blocks.append(rs.encode(plain, block_parity))
-    return b"".join(blocks) * repeat
+    once = b"".join(blocks)
+    once += bytes(_sequence_length(len(msg), key, chunk, parity) - len(once))
+    return once * repeat
 
 
 def _read_length(raw: bytes, offset: int, profile_id: int) -> int | None:

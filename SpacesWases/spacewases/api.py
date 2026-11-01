@@ -13,9 +13,9 @@ PROFILES: dict[str, tuple[int, int, int]] = {
     "fast": (2, 48, 20),
 }
 
-# Tramas de 1024 muestras por simbolo. Medido por aire en un equipo y sala
-# (SpacesWases/diagnostico_aire): 6 tramas ~0,94 de acierto de byte, 3 tramas
-# ~0,86. normal y fast usan el mismo simbolo; normal lleva mas paridad (corrige
+# Tramas de 1024 muestras por simbolo. Medido por aire en un equipo y sala con 3 bytes
+# por simbolo (SpacesWases/diagnostico_aire/air_tonos.py): 6 tramas ~0,86 de acierto de
+# byte, 3 tramas ~0,80. normal y fast usan el mismo simbolo; normal lleva mas paridad (corrige
 # hasta 16 de 90 bytes) y fast menos (10 de 78), a cambio de bloques mas cortos.
 FRAMES: dict[str, int] = {
     "robust": 6,

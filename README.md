@@ -45,7 +45,7 @@ msedge --headless=new --no-pdf-header-footer \
 - Revisión de literatura y análisis de ggwave: hecho.
 - Mediciones con ruido simulado: hechas (`results2.csv`).
 - Prueba acústica de ggwave con volumen y distancia controlados: pendiente.
-- Versión propia (`SpacesWases/`): hecha. Con ruido simulado, Robusto decodifica el 100 % desde −20 dB, y Normal y Rápido desde −16 dB; por aire, en un portátil y una sala, 157 de 180 mensajes con volumen normal y, con el receptor actual y volumen bajo, 54 de 90 frente a 36 del anterior sobre el mismo audio. Tiene cifrado opcional con clave, protección contra repetición y recuperación por fragmento.
+- Versión propia (`SpacesWases/`): hecha. Transmite 3 bytes por símbolo, de 47 a 84 bps con 16 bytes. Con ruido simulado, Robusto decodifica el 100 % desde −14 dB, y Normal y Rápido desde −10 dB. Por aire, en un portátil y una sala, 85 de 90 mensajes; a volumen bajo, turnando mensajes con el formato anterior, 20 frente a 12 de 45. Los dispositivos se turnan solos para emitir. Tiene cifrado opcional con clave, protección contra repetición y recuperación por fragmento.
 - Web: publicada en Vercel con la interfaz al estilo Waver. Probada por el autor entre dos dispositivos: a veces no recibía mensajes; se corrigió una causa (ver `CONTINUAR.md`, punto 9) y falta repetir esa prueba.
 
 ## Atribución y licencia

@@ -1,6 +1,6 @@
 // Hilo aparte para la recepción en vivo: buscar el chirp y decodificar cuesta segundos
 // en un móvil, y aquí no congelan la página. La lógica está en LiveSession.
-import { LiveSession } from "./spacewases.js?v=20261101a";
+import { LiveSession } from "./spacewases.js?v=20261101b";
 
 let session = null;
 

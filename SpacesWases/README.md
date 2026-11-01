@@ -5,7 +5,7 @@ Módem acústico propio en Python (solo `numpy` y la biblioteca estándar) para 
 ## Qué incluye
 
 - `spacewases/rs.py`: Reed-Solomon sobre GF(256).
-- `spacewases/modem.py`: modulación MFSK a 48 kHz con sincronía por chirp (bins de 46,875 Hz desde 1875 Hz). Cada símbolo dura varias tramas de 1024 muestras (6 en `robust`, 3 en `normal` y `fast`): la primera hace de guarda frente a la reverberación y el receptor suma las demás, como ggwave.
+- `spacewases/modem.py`: modulación MFSK a 48 kHz con sincronía por chirp: 6 tonos a la vez, uno por cada grupo contiguo de 16 bins de 46,875 Hz desde 1875 Hz, que llevan 3 bytes por símbolo. Cada símbolo dura varias tramas de 1024 muestras (6 en `robust`, 3 en `normal` y `fast`): la primera hace de guarda frente a la reverberación y el receptor suma las demás, como ggwave.
 - `spacewases/frame.py`: tramas con cabecera, HMAC-SHA256 truncado a 4 bytes, fragmentación y protección Reed-Solomon.
 - `spacewases/api.py`: `send` y `receive`, con perfiles `robust`, `normal` y `fast`.
 - `spacewases/cli.py`: codificar y decodificar archivos WAV.
@@ -17,11 +17,13 @@ Módem acústico propio en Python (solo `numpy` y la biblioteca estándar) para 
 
 El receptor en vivo (`StreamReceiver`) detecta el chirp de inicio con un umbral bajo y lee el bloque de longitud, que descarta las falsas detecciones y dice dónde acaba el mensaje. Así decodifica aunque el chirp final llegue débil o no llegue, muestra el avance real y no se queda grabando en una falsa detección.
 
+Al enviar, cada mensaje entra en una cola (`SendQueue`): espera a que el canal esté libre y a un retardo aleatorio de 0 a 3 s, y vuelve a comprobarlo antes de sonar. Con el micrófono activado en los dos dispositivos se turnan solos, sin que nadie tenga que esperar para pulsar Enviar.
+
 ```bash
 cd web
 python -m http.server 8790
 node test/roundtrip.mjs   # 63 pruebas, incluye WAV generados por Python
-node test/stream.mjs      # 21 pruebas del receptor en flujo y del remuestreo
+node test/stream.mjs      # 28 pruebas del receptor en flujo, los turnos y el remuestreo
 ```
 
 Abre `http://localhost:8790`. El micrófono solo funciona en `localhost` o `https`.
@@ -54,6 +56,19 @@ La clave opcional se pasa con `--key` o, mejor, con la variable de entorno `SPAC
 
 ## Resultados
 
+**Formato actual, 3 bytes por símbolo** (2026-11-01). Por aire, con el mismo receptor, turnando mensajes de los dos formatos en la misma sesión a volumen bajo (`aire_2026-11-01_alterna_*.csv`, ganancias 0,12 a 0,03, 45 mensajes de 16 B por formato):
+
+| Ganancia | 1 byte por símbolo | 3 bytes por símbolo |
+|---|---|---|
+| 0,12 | 8 de 15 | 12 de 15 |
+| 0,06 | 4 de 15 | 6 de 15 |
+| 0,03 | 0 de 15 | 2 de 15 |
+| **Total** | **12 de 45** | **20 de 45** |
+
+12 mensajes los recibió solo el formato nuevo y 4 solo el anterior; con tan pocos mensajes no es concluyente, pero no empeora. En dos series seguidas, por lo que el ruido no fue igual, dieron 85 de 90 el nuevo y 61 de 90 el anterior (`aire_2026-11-01_formato_*.csv`). Tasa neta con 16 B: robust 46,6 bps, normal 71,6 y fast 83,6, casi el triple. A cambio, frente a ruido blanco simulado se pierden unos 6 dB. Las tablas y cifras siguientes son del formato anterior de 1 byte por símbolo, salvo la simulación.
+
+Mediciones que llevaron a este diseño: `aire_2026-11-01_tonos.csv` (tonos contiguos frente a intercalados) y `aire_2026-11-01_duplex.csv` (dos señales a la vez, por lo que se usan turnos en lugar de dividir la banda).
+
 **Por aire** (`aire_2026-10-31_longitud_b.csv`): altavoz y micrófono integrados de un portátil, una sala, volumen del sistema fijo, mensaje de 16 B, 10 ensayos por punto; la ganancia digital baja la señal emitida.
 
 | Ganancia | robust | normal | fast |
@@ -82,7 +97,7 @@ Evolución en la misma prueba: símbolos de una trama 9/180 (`aire_2026-10-31.cs
 
 En las dos series ningún mensaje empeora y ninguno sale erróneo. La mejora está en los volúmenes bajos; con volumen alto el resultado es el mismo. Es recepción con altavoz y micrófono del mismo portátil: falta repetirlo entre dos dispositivos.
 
-**Simulación con ruido blanco** (16 B, 100 intentos por punto, semilla fija; `bench_resultados.csv` y `bench_bps.csv`): robust decodifica el 100 % desde −20 dB y cae a 4 % en −22 dB; normal y fast, el 100 % desde −16 dB y 3 % y 1 % en −18 dB. Esta SNR es de toda la señal e incluye los chirps. Tasa neta con 16 B: robust 17,4 bps, normal 27,8 y fast 33,4 (antes, con bloques rellenos a 48 B: 12,4 / 21,1 / 24,1). No se comparó con ggwave en las mismas condiciones.
+**Simulación con ruido blanco** (16 B, 100 intentos por punto, semilla fija; `bench_resultados.csv` y `bench_bps.csv`): robust decodifica el 100 % desde −14 dB y el 84 % en −16 dB; normal, el 100 % desde −10 dB y el 51 % en −12 dB; fast, el 99 % en −10 dB y el 6 % en −12 dB. Esta SNR es de toda la señal e incluye los chirps. Tasa neta con 16 B: robust 46,6 bps, normal 71,6 y fast 83,6 (con 1 byte por símbolo: 17,4 / 27,8 / 33,4, y con bloques rellenos a 48 B: 12,4 / 21,1 / 24,1). No se comparó con ggwave en las mismas condiciones.
 
 ## Límites conocidos
 
@@ -90,6 +105,7 @@ En las dos series ningún mensaje empeora y ninguno sale erróneo. La mejora est
 - La protección contra repetición es opcional y del receptor: hay que pasar un `ReplayGuard` a `receive`. Exige relojes razonablemente sincronizados (ventana de 120 s por defecto).
 - Cada bloque Reed-Solomon se valida por separado, pero un mensaje de varios fragmentos solo se recupera si llegan todos. `send(..., repeat=N)` lo envía N veces para rellenar huecos, a costa de N veces el tiempo de aire.
 - Los símbolos largos cuestan tasa: un bloque de `robust` dura unos 10 s. No hay seguimiento de reloj. Si la posición que da el chirp no decodifica, el receptor prueba la ventana desplazada 0, −256, −512 y +256 muestras (ggwave prueba 16 desplazamientos por trama); sobre las mismas 45 grabaciones por aire pasó de 44 a 45 decodificadas (`aire_2026-10-31_alineacion.csv`). Los valores de tramas, paridad y umbral de inicio se eligieron con mediciones de un solo equipo y sala (`diagnostico_aire/`).
+- La comunicación es por turnos: un dispositivo no recibe mientras emite, porque su altavoz tapa al otro (`aire_2026-11-01_duplex.csv`). Dos dispositivos que arrancan casi a la vez aún chocan (18,8 % en simulación con dos esperando), no hay acuse de recibo y los turnos exigen el micrófono activado.
 - Un mensaje cuyo bloque de longitud se dañe y que no tenga repeticiones no se puede decodificar. Una falsa detección se abandona en silencio, sin molestar en el historial; si un sonido imita también el chirp final, puede aparecer un aviso de señal no decodificada.
 
 `docs/SPEC.md` es la especificación que se dio al agente que escribió el código inicial.
