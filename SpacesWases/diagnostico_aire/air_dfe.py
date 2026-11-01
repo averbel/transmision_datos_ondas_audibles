@@ -4,7 +4,7 @@ score'_t = P_t - gamma * P_{t-1}. gamma se elige con la captura 1 y se evalua en
 """
 import sys
 
-sys.path.insert(0, r"C:\t\repo\mi_version")
+sys.path.insert(0, r"C:\t\repo\SpacesWases")
 
 import numpy as np
 import sounddevice as sd

@@ -2,7 +2,7 @@
 
 Scripts que se usaron para investigar por qué `prueba_aire.py` falla (9 de 180 ensayos). Todos reproducen sonido por el altavoz y graban con el micrófono sin tocar el volumen del sistema.
 
-**Están escritos para el PC de esa sesión**: las rutas (`C:\t\repo\mi_version`) y los índices de dispositivo (salida 4, entrada 1; rutas MME, DirectSound y WASAPI en `air_diag.py`) hay que adaptarlos. Lista los tuyos con `python -c "import sounddevice as sd; print(sd.query_devices())"`.
+**Están escritos para el PC de esa sesión**: las rutas (`C:\t\repo\SpacesWases`) y los índices de dispositivo (salida 4, entrada 1; rutas MME, DirectSound y WASAPI en `air_diag.py`) hay que adaptarlos. Lista los tuyos con `python -c "import sounddevice as sd; print(sd.query_devices())"`.
 
 | Script | Qué mide |
 |---|---|

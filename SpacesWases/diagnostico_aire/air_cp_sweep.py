@@ -1,7 +1,7 @@
 """Precision de nibble por aire segun el largo del prefijo ciclico (sin cambiar el volumen)."""
 import sys
 
-sys.path.insert(0, r"C:\t\repo\mi_version")
+sys.path.insert(0, r"C:\t\repo\SpacesWases")
 
 import numpy as np
 import sounddevice as sd

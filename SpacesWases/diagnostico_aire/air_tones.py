@@ -5,7 +5,7 @@ tono 0-15, que fraccion se recibe bien y que se recibe cuando falla.
 """
 import sys
 
-sys.path.insert(0, r"C:\t\repo\mi_version")
+sys.path.insert(0, r"C:\t\repo\SpacesWases")
 
 import numpy as np
 import sounddevice as sd

@@ -1,6 +1,6 @@
-# Publica la web de SpaceWases (mi_version/web) en GitHub Pages.
+# Publica la web de SpaceWases (SpacesWases/web) en GitHub Pages.
 # Solo se ejecuta a mano (Actions > Publicar web > Run workflow) y requiere activar
-# antes Pages con la fuente "GitHub Actions". Ver mi_version/README.md, seccion Publicar.
+# antes Pages con la fuente "GitHub Actions". Ver SpacesWases/README.md, seccion Publicar.
 name: Publicar web
 
 on:
@@ -23,8 +23,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-      - run: node mi_version/web/test/roundtrip.mjs
-      - run: node mi_version/web/test/stream.mjs
+      - run: node SpacesWases/web/test/roundtrip.mjs
+      - run: node SpacesWases/web/test/stream.mjs
 
   publicar:
     needs: pruebas
@@ -37,7 +37,7 @@ jobs:
       - name: Copiar solo los archivos de la web
         run: |
           mkdir _site
-          cp mi_version/web/index.html mi_version/web/app.js mi_version/web/spacewases.js mi_version/web/style.css mi_version/web/captura.js _site/
+          cp SpacesWases/web/index.html SpacesWases/web/app.js SpacesWases/web/spacewases.js SpacesWases/web/style.css SpacesWases/web/captura.js _site/
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

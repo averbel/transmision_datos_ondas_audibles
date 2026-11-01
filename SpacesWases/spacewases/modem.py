@@ -15,7 +15,7 @@ posteriores, asi un eco de sala con retardo menor que el prefijo (unos 5 ms,
 Por aire, la cola de reverberacion de una sala dura mucho mas que ese prefijo.
 Por eso los perfiles usan simbolos de varias tramas (parametro frames): la
 primera trama hace de guarda y el receptor suma las siguientes antes de la FFT,
-como ggwave. Ver mi_version/diagnostico_aire.
+como ggwave. Ver SpacesWases/diagnostico_aire.
 """
 
 from __future__ import annotations

@@ -1,7 +1,7 @@
 """Patron de error por aire: posicion de los bytes malos y deriva de reloj. Sin cambiar el volumen."""
 import sys
 
-sys.path.insert(0, r"C:\t\repo\mi_version")
+sys.path.insert(0, r"C:\t\repo\SpacesWases")
 
 import numpy as np
 import sounddevice as sd

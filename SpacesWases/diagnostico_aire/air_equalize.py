@@ -6,7 +6,7 @@ normalizacion. Es evidencia fuera de linea, no cambia el modem.
 """
 import sys
 
-sys.path.insert(0, r"C:\t\repo\mi_version")
+sys.path.insert(0, r"C:\t\repo\SpacesWases")
 
 import numpy as np
 import sounddevice as sd

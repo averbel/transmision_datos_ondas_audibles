@@ -1,6 +1,6 @@
 # Tarea: modem acústico propio "spacewases" (Python 3.11, numpy, pytest)
 Escribe TODO desde cero (no copies código de ggwave). Sólo numpy + stdlib (hmac, hashlib, zlib).
-Carpeta de trabajo: esta (mi_version/). Crea el paquete `spacewases/` y `tests/`.
+Carpeta de trabajo: esta (SpacesWases/). Crea el paquete `spacewases/` y `tests/`.
 
 ## Módulos
 1. `spacewases/rs.py`: Reed-Solomon GF(256) (poly 0x11d) propio: `encode(data:bytes, nparity:int)->bytes`, `decode(block:bytes, nparity:int)->bytes` (corrige hasta nparity//2 bytes; lanza `ValueError` si no puede).
@@ -18,4 +18,4 @@ Carpeta de trabajo: esta (mi_version/). Crea el paquete `spacewases/` y `tests/`
 - Señal con silencio y desplazamiento aleatorio antes/después se decodifica.
 
 ## Reglas
-Código claro, docstrings cortos en español, sin dependencias extra. Ejecuta `pytest -q` y corrige hasta que pase. No toques nada fuera de mi_version/. Al terminar imprime un resumen de 10 líneas con resultados de pytest y de bench.
+Código claro, docstrings cortos en español, sin dependencias extra. Ejecuta `pytest -q` y corrige hasta que pase. No toques nada fuera de SpacesWases/. Al terminar imprime un resumen de 10 líneas con resultados de pytest y de bench.
