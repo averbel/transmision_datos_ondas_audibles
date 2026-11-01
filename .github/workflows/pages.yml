@@ -37,7 +37,7 @@ jobs:
       - name: Copiar solo los archivos de la web
         run: |
           mkdir _site
-          cp SpacesWases/web/index.html SpacesWases/web/app.js SpacesWases/web/spacewases.js SpacesWases/web/style.css SpacesWases/web/captura.js SpacesWases/web/receptor.js _site/
+          cp SpacesWases/web/index.html SpacesWases/web/app.js SpacesWases/web/spacewases.js SpacesWases/web/style.css SpacesWases/web/captura.js SpacesWases/web/receptor.js SpacesWases/web/logo-blanco.svg SpacesWases/web/icono.svg _site/
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

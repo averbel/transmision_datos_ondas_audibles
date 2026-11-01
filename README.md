@@ -1,3 +1,8 @@
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="SpacesWases/web/logo-blanco.svg">
+  <img src="SpacesWases/web/logo-negro.svg" alt="SpaceWases" width="420">
+</picture>
+
 # Transmisión de datos mediante ondas audibles
 
 Investigación (Universidad de la Costa, CUC) sobre comunicación de datos por sonido con altavoz y micrófono:

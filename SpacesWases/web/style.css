@@ -333,9 +333,10 @@ canvas {
   padding: 4px 4px 16px;
 }
 
-h1 {
-  margin: 4px 0 0;
-  font-size: 1.4rem;
+.brand {
+  margin: 0 0 8px;
+  line-height: 0;
+  text-align: center;
 }
 
 .muted {

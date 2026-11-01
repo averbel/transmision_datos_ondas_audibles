@@ -9,7 +9,7 @@ import {
   signalSeconds,
   LiveSession,
   SendQueue,
-} from "./spacewases.js?v=20261101b";
+} from "./spacewases.js?v=20261101c";
 
 const PROFILE_LABELS = {
   robust: "Robusto",
@@ -383,7 +383,7 @@ function createLiveReceiver(rate) {
   let supportsModuleWorker = false;
   let worker = null;
   if (window.Worker) {
-    worker = new Worker("receptor.js?v=20261101b", {
+    worker = new Worker("receptor.js?v=20261101c", {
       get type() {
         supportsModuleWorker = true;
         return "module";
@@ -516,7 +516,7 @@ async function startListening() {
     // ocupada; ScriptProcessor queda para navegadores sin AudioWorklet.
     if (micContext.audioWorklet && window.AudioWorkletNode) {
       try {
-        await micContext.audioWorklet.addModule("captura.js?v=20261101b");
+        await micContext.audioWorklet.addModule("captura.js?v=20261101c");
         processorNode = new AudioWorkletNode(micContext, "captura", { outputChannelCount: [1] });
         processorNode.port.onmessage = (event) => onAudio(event.data);
       } catch {

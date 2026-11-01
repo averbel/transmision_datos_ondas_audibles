@@ -7,10 +7,12 @@
   <meta name="description" content="SpaceWases: envía y recibe texto por sonido entre dispositivos cercanos, con el altavoz y el micrófono.">
   <meta name="theme-color" content="#141414">
   <title>SpaceWases</title>
-  <link rel="stylesheet" href="style.css?v=20261101b">
+  <link rel="icon" type="image/svg+xml" href="icono.svg?v=20261101c">
+  <link rel="stylesheet" href="style.css?v=20261101c">
 </head>
 <body>
   <div class="app">
+    <h1 class="brand"><img src="logo-blanco.svg?v=20261101c" alt="SpaceWases" width="226" height="28"></h1>
     <nav class="tabs" role="tablist" aria-label="Secciones">
       <button id="tab-settings" class="tab tab-icon" type="button" role="tab" aria-controls="view-settings" aria-selected="false" aria-label="Ajustes" title="Ajustes">⚙</button>
       <button id="tab-messages" class="tab" type="button" role="tab" aria-controls="view-messages" aria-selected="true">
@@ -48,7 +50,6 @@
     </section>
 
     <section id="view-settings" class="view view-settings" role="tabpanel" aria-labelledby="tab-settings" hidden>
-      <h1>SpaceWases</h1>
       <p class="muted">Texto por sonido entre dispositivos cercanos: MFSK a 48 kHz con Reed-Solomon.</p>
 
       <div class="setting">
@@ -59,7 +60,7 @@
       <fieldset class="setting">
         <legend>Protocolo de envío</legend>
         <div id="protocols" class="protocols"></div>
-        <p class="muted">Robusto aguanta mejor el ruido, el eco y la distancia; Normal y Rápido tardan entre un 40 y un 50 % menos, para equipos cercanos. El receptor reconoce los tres solo.</p>
+        <p class="muted">Robusto aguanta mejor el ruido, el eco y la distancia; Normal y Rápido tardan entre un 35 y un 50 % menos, para equipos cercanos. El receptor reconoce los tres solo.</p>
       </fieldset>
 
       <div class="setting">
@@ -110,6 +111,6 @@
     </section>
   </div>
 
-  <script type="module" src="app.js?v=20261101b"></script>
+  <script type="module" src="app.js?v=20261101c"></script>
 </body>
 </html>
