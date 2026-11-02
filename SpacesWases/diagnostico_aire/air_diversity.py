@@ -5,8 +5,9 @@ grupo A solo, el B solo, y la combinacion A+B (suma de potencia y suma de log),
 con y sin DFE. No cambia el volumen.
 """
 import sys
+from pathlib import Path
 
-sys.path.insert(0, r"C:\t\repo\SpacesWases")
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import numpy as np
 import sounddevice as sd

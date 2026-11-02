@@ -3,8 +3,9 @@
 score'_t = P_t - gamma * P_{t-1}. gamma se elige con la captura 1 y se evalua en la 2 y 3.
 """
 import sys
+from pathlib import Path
 
-sys.path.insert(0, r"C:\t\repo\SpacesWases")
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import numpy as np
 import sounddevice as sd

@@ -28,20 +28,11 @@ node test/stream.mjs      # 28 pruebas del receptor en flujo, los turnos y el re
 
 Abre `http://localhost:8790`. El micrófono solo funciona en `localhost` o `https`.
 
-### Publicar en GitHub Pages
-
-El flujo `.github/workflows/pages.yml` corre las pruebas JS y publica solo `index.html`, `app.js`, `spacewases.js`, `captura.js`, `receptor.js` y `style.css`. Pages sirve con https, que el micrófono necesita. No se ejecuta solo: hay que lanzarlo a mano.
-
-1. Decidir antes la visibilidad (la licencia es MIT, `LICENSE` en la raíz): la página publicada es pública aunque el repositorio sea privado, y Pages en un repositorio privado requiere un plan de pago de GitHub.
-2. En GitHub: *Settings → Pages → Build and deployment → Source: GitHub Actions*.
-3. En cada publicación, cambiar la versión `?v=AAAAMMDD` en `web/index.html` (dos veces), `web/app.js` (tres veces) y `web/receptor.js`, para que nadie se quede con un JS viejo en caché; correr las pruebas de Python y JS; hacer push.
-4. *Actions → Publicar web → Run workflow*. La dirección queda en el resumen del trabajo (`https://<usuario>.github.io/<repositorio>/`).
-
 La página declara una política de seguridad de contenido que solo permite cargar recursos del mismo sitio.
 
 ### Publicar en Vercel
 
-Publicada en https://spacewases.vercel.app (proyecto `averbels-projects/spacewases`, sin conexión a GitHub: cada push no publica nada). Para publicar de nuevo, desde `web/`: `npx vercel deploy --prod`. `.vercelignore` deja fuera `SPEC.md` y `test/`, y `vercel.json` añade cabeceras de seguridad (la misma política de contenido más `frame-ancestors 'none'`, `nosniff`, sin referer y micrófono solo para el propio sitio). La regla de cambiar `?v=` en cada publicación es la misma.
+Publicada en https://spacewases.vercel.app (proyecto `averbels-projects/spacewases`, sin conexión a GitHub: cada push no publica nada). Para publicar de nuevo, desde `web/`: `npx vercel deploy --prod`. `.vercelignore` deja fuera `test/`, y `vercel.json` añade cabeceras de seguridad (la misma política de contenido más `frame-ancestors 'none'`, `nosniff`, sin referer y micrófono solo para el propio sitio). En cada publicación hay que cambiar la versión `?v=` en `web/index.html` (cuatro veces), `web/app.js` (tres veces) y `web/receptor.js`, para que nadie se quede con un JS viejo en caché.
 
 ## Uso
 
@@ -108,4 +99,4 @@ En las dos series ningún mensaje empeora y ninguno sale erróneo. La mejora est
 - La comunicación es por turnos: un dispositivo no recibe mientras emite, porque su altavoz tapa al otro (`aire_2026-11-01_duplex.csv`). Dos dispositivos que arrancan casi a la vez aún chocan (18,8 % en simulación con dos esperando), no hay acuse de recibo y los turnos exigen el micrófono activado.
 - Un mensaje cuyo bloque de longitud se dañe y que no tenga repeticiones no se puede decodificar. Una falsa detección se abandona en silencio, sin molestar en el historial; si un sonido imita también el chirp final, puede aparecer un aviso de señal no decodificada.
 
-`docs/SPEC.md` es la especificación que se dio al agente que escribió el código inicial.
+En el desarrollo del código se usó un asistente de programación basado en inteligencia artificial.

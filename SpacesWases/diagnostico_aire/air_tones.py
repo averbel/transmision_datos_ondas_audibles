@@ -4,8 +4,9 @@ Transmite todos los valores de nibble repetidos y mide, para cada indice de
 tono 0-15, que fraccion se recibe bien y que se recibe cuando falla.
 """
 import sys
+from pathlib import Path
 
-sys.path.insert(0, r"C:\t\repo\SpacesWases")
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import numpy as np
 import sounddevice as sd

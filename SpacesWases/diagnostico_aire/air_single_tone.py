@@ -6,8 +6,9 @@ Variantes, mismo formato de chirps y prefijo ciclico:
   solo:  un unico tono del grupo A por simbolo, a doble amplitud (misma potencia)
 """
 import sys
+from pathlib import Path
 
-sys.path.insert(0, r"C:\t\repo\SpacesWases")
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import numpy as np
 import sounddevice as sd

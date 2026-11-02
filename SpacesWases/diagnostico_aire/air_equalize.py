@@ -5,8 +5,9 @@ de ruido por tono) con el ensayo 1 y decodifica los ensayos 2 y 3 con y sin
 normalizacion. Es evidencia fuera de linea, no cambia el modem.
 """
 import sys
+from pathlib import Path
 
-sys.path.insert(0, r"C:\t\repo\SpacesWases")
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import numpy as np
 import sounddevice as sd
