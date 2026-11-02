@@ -37,7 +37,7 @@ Publicada en https://spacewases.vercel.app (proyecto `averbels-projects/spacewas
 ## Uso
 
 ```bash
-pip install numpy pytest sounddevice
+pip install -r requirements.txt
 python -m pytest -q
 python -m spacewases.cli encode "hola" salida.wav --profile robust
 python -m spacewases.cli decode salida.wav
