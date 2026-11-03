@@ -88,7 +88,7 @@
 <tr><td><code>receptor.js</code></td><td>Corre en un hilo aparte (<code>Worker</code>): recibe el audio y ejecuta la recepción sin frenar la página.</td></tr>
 </tbody>
 </table>
-<p>La carpeta <code>SpacesWases/spacewases/</code> contiene la misma lógica de módem en Python, con el mismo formato de señal, para las pruebas por aire, el banco de ruido y la línea de comandos. Un mensaje generado en uno se decodifica en el otro.</p>
+<p>La carpeta <code>Space Waves/spacewases/</code> contiene la misma lógica de módem en Python, con el mismo formato de señal, para las pruebas por aire, el banco de ruido y la línea de comandos. Un mensaje generado en uno se decodifica en el otro.</p>
 
 <h2>2. Envío: del texto a los bytes</h2>
 <p class="k">Al pulsar Enviar, <code>app.js</code> convierte el texto a UTF-8 y llama a <code>send()</code>. Los bytes se empaquetan así:</p>
@@ -282,7 +282,7 @@
 <li><b>Pruebas automáticas.</b> 71 en Python (<code>python -m pytest</code>) y 91 en JavaScript (<code>web/test/roundtrip.mjs</code> y <code>stream.mjs</code>). Incluyen WAV generados por Python y decodificados en JavaScript, salas simuladas, falsas detecciones, turnos con reloj simulado y entradas inválidas.</li>
 <li><b>Por aire.</b> <code>diagnostico_aire/grabar_serie.py</code> graba capturas reales, y <code>comparar_receptores.mjs</code> las pasa por dos versiones del receptor sobre el mismo audio. <code>alternar_formatos.py</code> turna mensajes de dos formatos en la misma sesión, para que el ruido del momento les afecte por igual.</li>
 <li><b>En el navegador.</b> Se sustituye el micrófono por una señal conocida, lo que prueba todo el camino, con los tres hilos.</li>
-<li><b>Publicación.</b> Se lanza a mano con <code>npx vercel deploy --prod</code> desde <code>SpacesWases/web</code>; un push a GitHub no publica nada.</li>
+<li><b>Publicación.</b> Se lanza a mano con <code>npx vercel deploy --prod</code> desde <code>Space Waves/web</code>; un push a GitHub no publica nada.</li>
 </ul>
 
 <h2>9. Límites del diseño</h2>

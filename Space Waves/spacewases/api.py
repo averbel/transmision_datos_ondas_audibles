@@ -14,7 +14,7 @@ PROFILES: dict[str, tuple[int, int, int]] = {
 }
 
 # Tramas de 1024 muestras por simbolo. Medido por aire en un equipo y sala con 3 bytes
-# por simbolo (SpacesWases/diagnostico_aire/air_tonos.py): 6 tramas ~0,86 de acierto de
+# por simbolo (Space Waves/diagnostico_aire/air_tonos.py): 6 tramas ~0,86 de acierto de
 # byte, 3 tramas ~0,80. normal y fast usan el mismo simbolo; normal lleva mas paridad (corrige
 # hasta 16 de 90 bytes) y fast menos (10 de 78), a cambio de bloques mas cortos.
 FRAMES: dict[str, int] = {
