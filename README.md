@@ -19,7 +19,6 @@ abierto [ggwave](https://github.com/ggerganov/ggwave).
 | `Space Waves/` | **Space Waves**, módem acústico propio en Python con pruebas, benchmark y diagnóstico por aire. Ver `Space Waves/README.md`. |
 | `Space Waves/web/` | La web publicada: port exacto del módem a JavaScript, sin dependencias, con sus pruebas en `web/test/`. |
 | `experimentos/ggwave_bench/` | Banco de pruebas en C++ (canal con ruido blanco gaussiano simulado). Sus resultados están en `paper/results2.csv`. |
-| `experimentos/prueba_acustica/` | Herramientas para la prueba real altavoz→micrófono (`enc.cpp`, `dec.cpp`, `air.py`). **Pendiente**: las series completas se descartaron por condiciones no controladas. |
 
 ## Reproducir
 
