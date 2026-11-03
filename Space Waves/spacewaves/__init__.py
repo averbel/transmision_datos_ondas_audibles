@@ -1,4 +1,4 @@
-"""spacewases: modem acustico MFSK con Reed-Solomon y HMAC."""
+"""spacewaves: modem acustico MFSK con Reed-Solomon y HMAC."""
 
 from .api import PROFILES, receive, send
 from .frame import Reassembler

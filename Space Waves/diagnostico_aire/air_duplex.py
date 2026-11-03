@@ -13,7 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import numpy as np
 import sounddevice as sd
 
-from spacewases.modem import CHIRP_LEN, FS, GUARD, SYMBOL, _chirp, _envelope, _find_chirp
+from spacewaves.modem import CHIRP_LEN, FS, GUARD, SYMBOL, _chirp, _envelope, _find_chirp
 
 OUT, INP, TRIALS = int(sys.argv[1]), int(sys.argv[2]), int(sys.argv[3])
 SYMBOLS, FRAMES = 40, 6

@@ -9,7 +9,7 @@ import {
   signalSeconds,
   LiveSession,
   SendQueue,
-} from "./spacewases.js?v=20261101c";
+} from "./spacewaves.js?v=20261102a";
 
 const PROFILE_LABELS = {
   robust: "Robusto",
@@ -339,7 +339,7 @@ downloadButton.addEventListener("click", async () => {
     const url = URL.createObjectURL(new Blob([wav], { type: "audio/wav" }));
     const link = document.createElement("a");
     link.href = url;
-    link.download = "spacewases.wav";
+    link.download = "spacewaves.wav";
     document.body.append(link);
     link.click();
     link.remove();
@@ -383,7 +383,7 @@ function createLiveReceiver(rate) {
   let supportsModuleWorker = false;
   let worker = null;
   if (window.Worker) {
-    worker = new Worker("receptor.js?v=20261101c", {
+    worker = new Worker("receptor.js?v=20261102a", {
       get type() {
         supportsModuleWorker = true;
         return "module";
@@ -516,7 +516,7 @@ async function startListening() {
     // ocupada; ScriptProcessor queda para navegadores sin AudioWorklet.
     if (micContext.audioWorklet && window.AudioWorkletNode) {
       try {
-        await micContext.audioWorklet.addModule("captura.js?v=20261101c");
+        await micContext.audioWorklet.addModule("captura.js?v=20261102a");
         processorNode = new AudioWorkletNode(micContext, "captura", { outputChannelCount: [1] });
         processorNode.port.onmessage = (event) => onAudio(event.data);
       } catch {
@@ -752,7 +752,7 @@ localRun.addEventListener("click", async () => {
   localResult.textContent = "Generando y decodificando…";
   try {
     const snr = Number(localSnr.value);
-    const text = sendText.value.length ? sendText.value : "prueba local de spacewases";
+    const text = sendText.value.length ? sendText.value : "prueba local de spacewaves";
     const signal = await send(encoder.encode(text), null, profile);
     let power = 0;
     for (let i = 0; i < signal.length; i++) power += signal[i] * signal[i];

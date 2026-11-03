@@ -11,8 +11,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import numpy as np
 import sounddevice as sd
 
-from spacewases import api, send
-from spacewases.modem import FS
+from spacewaves import api, send
+from spacewaves.modem import FS
 
 OUT, INP, TRIALS = int(sys.argv[1]), int(sys.argv[2]), int(sys.argv[3])
 GAINS = [1.0, 0.5, 0.25]

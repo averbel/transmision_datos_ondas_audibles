@@ -11,8 +11,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import numpy as np
 import sounddevice as sd
 
-from spacewases import send
-from spacewases.modem import FS
+from spacewaves import send
+from spacewaves.modem import FS
 
 OUT, INP, GAIN, PATH = int(sys.argv[1]), int(sys.argv[2]), float(sys.argv[3]), sys.argv[4]
 MESSAGES = [(b"hola fast", "fast"), (b"mensaje normal", "normal"), (b"robusto por aire", "robust")]

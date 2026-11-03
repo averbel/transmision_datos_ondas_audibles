@@ -37,7 +37,7 @@ def _read_wav(path: str) -> np.ndarray:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="spacewases")
+    parser = argparse.ArgumentParser(prog="spacewaves")
     sub = parser.add_subparsers(dest="command", required=True)
 
     enc = sub.add_parser("encode", help="texto a WAV")
@@ -51,8 +51,8 @@ def main(argv: list[str] | None = None) -> int:
     dec.add_argument("--key", default=None)
 
     args = parser.parse_args(argv)
-    # La clave puede venir de SPACEWASES_KEY para no dejarla en el historial ni en la lista de procesos.
-    raw_key = args.key if args.key is not None else os.environ.get("SPACEWASES_KEY")
+    # La clave puede venir de SPACEWAVES_KEY para no dejarla en el historial ni en la lista de procesos.
+    raw_key = args.key if args.key is not None else os.environ.get("SPACEWAVES_KEY")
     key = None if raw_key is None else raw_key.encode("utf-8")
     try:
         if args.command == "encode":

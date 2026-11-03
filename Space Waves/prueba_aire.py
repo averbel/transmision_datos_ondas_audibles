@@ -1,4 +1,4 @@
-"""Prueba por aire de spacewases: altavoz -> aire -> microfono, con el volumen del sistema fijo.
+"""Prueba por aire de spacewaves: altavoz -> aire -> microfono, con el volumen del sistema fijo.
 
 Uso: python prueba_aire.py SALIDA ENTRADA ENSAYOS [GANANCIAS] > aire.csv
 El volumen del sistema y la distancia los fija quien ejecuta; aqui solo se
@@ -12,8 +12,8 @@ import sys
 import numpy as np
 import sounddevice as sd
 
-from spacewases import PROFILES, receive, send
-from spacewases.modem import FS
+from spacewaves import PROFILES, receive, send
+from spacewaves.modem import FS
 
 OUT, INP, TRIALS = int(sys.argv[1]), int(sys.argv[2]), int(sys.argv[3])
 GAINS = [float(g) for g in sys.argv[4].split(",")] if len(sys.argv) > 4 else [1.0, 0.5, 0.25, 0.12, 0.06, 0.03]

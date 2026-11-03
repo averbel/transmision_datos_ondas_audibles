@@ -2,7 +2,7 @@
 // muestras, como los entrega el navegador, e imprime cada evento.
 // Uso: node stream_grabacion.mjs archivo.f32
 import { readFileSync } from "node:fs";
-import { StreamReceiver, FS } from "../spacewases.js";
+import { StreamReceiver, FS } from "../spacewaves.js";
 
 const bytes = readFileSync(process.argv[2]);
 const audio = new Float32Array(bytes.buffer, bytes.byteOffset, bytes.length / 4);

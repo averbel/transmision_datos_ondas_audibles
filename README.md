@@ -1,6 +1,6 @@
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="Space%20Waves/web/logo-blanco.svg">
-  <img src="Space%20Waves/web/logo-negro.svg" alt="SpaceWases" width="420">
+  <img src="Space%20Waves/web/logo-negro.svg" alt="Space Waves" width="420">
 </picture>
 
 # Transmisión de datos mediante ondas audibles
@@ -9,14 +9,14 @@ Investigación (Universidad de la Costa, CUC) sobre comunicación de datos por s
 fundamentos del canal acústico, estado del arte con cifras publicadas y un estudio de caso del sistema
 abierto [ggwave](https://github.com/ggerganov/ggwave).
 
-**Web en uso:** https://spacewases.vercel.app — envía y recibe texto por sonido entre dos dispositivos cercanos, con una interfaz al estilo de Waver (la app de ggwave). Ábrela en los dos, activa el micrófono en el que recibe y escribe en el otro.
+**Web en uso:** https://space-waves-cuc.vercel.app — envía y recibe texto por sonido entre dos dispositivos cercanos, con una interfaz al estilo de Waver (la app de ggwave). Ábrela en los dos, activa el micrófono en el que recibe y escribe en el otro.
 
 ## Contenido
 
 | Carpeta | Qué hay |
 |---|---|
-| `paper/` | Artículo en formato IEEE de dos columnas: `Articulo_IEEE_Transmision_ondas_audibles.pdf`, su fuente `articulo.html`, las figuras y `make_figures.py`. `Informe_hallazgos_y_mejoras.pdf` reúne aparte los errores encontrados y cómo se mejoraron, y `Funcionamiento_interno_SpaceWases.pdf` explica cómo funciona la aplicación por dentro. |
-| `Space Waves/` | **SpaceWases**, módem acústico propio en Python con pruebas, benchmark y diagnóstico por aire. Ver `Space Waves/README.md`. |
+| `paper/` | Artículo en formato IEEE de dos columnas: `Articulo_IEEE_Transmision_ondas_audibles.pdf`, su fuente `articulo.html`, las figuras y `make_figures.py`. `Informe_hallazgos_y_mejoras.pdf` reúne aparte los errores encontrados y cómo se mejoraron, y `Funcionamiento_interno_Space_Waves.pdf` explica cómo funciona la aplicación por dentro. |
+| `Space Waves/` | **Space Waves**, módem acústico propio en Python con pruebas, benchmark y diagnóstico por aire. Ver `Space Waves/README.md`. |
 | `Space Waves/web/` | La web publicada: port exacto del módem a JavaScript, sin dependencias, con sus pruebas en `web/test/`. |
 | `experimentos/ggwave_bench/` | Banco de pruebas en C++ (canal con ruido blanco gaussiano simulado). Sus resultados están en `paper/results2.csv`. |
 | `experimentos/prueba_acustica/` | Herramientas para la prueba real altavoz→micrófono (`enc.cpp`, `dec.cpp`, `air.py`). **Pendiente**: las series completas se descartaron por condiciones no controladas. |

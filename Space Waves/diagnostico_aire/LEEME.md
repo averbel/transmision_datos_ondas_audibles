@@ -23,6 +23,6 @@ Scripts que se usaron para investigar por qué `prueba_aire.py` falla (9 de 180 
 | `air_tonos.py` | Acierto de 1, 2 y 3 bytes por símbolo, con los tonos contiguos o intercalados |
 | `air_duplex.py` | Dos señales a la vez, una en cada mitad de la banda, con varios desniveles |
 | `alternar_formatos.py` | Graba mensajes de dos formatos turnándose en la misma sesión, para compararlos en las mismas condiciones |
-| `comparar_receptores.mjs` | Pasa esas capturas por dos versiones de `spacewases.js`, en trozos como la web, para compararlas sobre el mismo audio |
+| `comparar_receptores.mjs` | Pasa esas capturas por dos versiones de `spacewaves.js`, en trozos como la web, para compararlas sobre el mismo audio |
 
 Resultados y conclusiones: ver `paper/Informe_hallazgos_y_mejoras.pdf` y la sección VIII del artículo.

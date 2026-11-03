@@ -16,7 +16,7 @@ import {
   signalSeconds,
   masterKey,
   findChirp,
-} from "../spacewases.js";
+} from "../spacewaves.js";
 
 let passed = 0;
 let failed = 0;
@@ -74,9 +74,9 @@ for (const profile of Object.keys(PROFILES)) {
 }
 
 const fixtures = [
-  ["py_robust.wav", "clave", "hola spacewases robust"],
-  ["py_normal.wav", "clave", "hola spacewases normal"],
-  ["py_fast.wav", "clave", "hola spacewases fast"],
+  ["py_robust.wav", "clave", "hola spacewaves robust"],
+  ["py_normal.wav", "clave", "hola spacewaves normal"],
+  ["py_fast.wav", "clave", "hola spacewaves fast"],
   ["py_nokey.wav", null, "mensaje sin clave"],
 ];
 
@@ -168,7 +168,7 @@ for (const [file, keyText, expected] of fixtures) {
 }
 
 {
-  // El mismo vector esta en tests/test_spacewases.py: Python y JS deben derivar igual.
+  // El mismo vector esta en tests/test_spacewaves.py: Python y JS deben derivar igual.
   const name = "PBKDF2: misma clave maestra que Python";
   try {
     const hex = Array.from(await masterKey(encoder.encode("clave")), (b) => b.toString(16).padStart(2, "0")).join("");

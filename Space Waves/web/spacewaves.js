@@ -684,7 +684,8 @@ const textEncoder = new TextEncoder();
 // Claves de cifrado y de etiqueta derivadas de la clave del usuario (igual que frame._subkey).
 // Clave maestra de 32 bytes: PBKDF2-HMAC-SHA256 de la clave del usuario (igual que
 // frame.master_key en Python). La sal es fija para no derivar en cada intento de
-// decodificacion; ver la explicacion en frame.py.
+// decodificacion; ver la explicacion en frame.py. La sal y la etiqueta de las subclaves
+// conservan el nombre anterior del proyecto: cambiarlas haria incompatibles los mensajes con clave.
 export const PBKDF2_SALT = textEncoder.encode("spacewases-pbkdf2-v1");
 export const PBKDF2_ITERATIONS = 600000;
 

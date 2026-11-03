@@ -41,6 +41,8 @@ HMAC_LEN = 4
 SESSION_LEN = 10
 HEADER_LEN_V2 = HEADER_LEN + SESSION_LEN
 HMAC_LEN_V2 = 8
+# La sal y la etiqueta de _subkey conservan el nombre anterior del proyecto: cambiarlas
+# haria incompatibles los mensajes con clave.
 PBKDF2_SALT = b"spacewases-pbkdf2-v1"
 PBKDF2_ITERATIONS = 600_000
 

@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<title>SpaceWases: cómo funciona por dentro</title>
+<title>Space Waves: cómo funciona por dentro</title>
 <style>
   @page { size: Letter; margin: 0.8in 0.8in 0.85in 0.8in;
           @bottom-center { content: counter(page); font: 8pt "Times New Roman", serif; } }
@@ -42,12 +42,12 @@
 <body>
 
 <header>
-  <h1>SpaceWases: cómo funciona por dentro</h1>
+  <h1>Space Waves: cómo funciona por dentro</h1>
   <p class="author">Andrés Felipe Verbel Pacheco</p>
   <p class="aff">Universidad de la Costa (CUC), Barranquilla, Colombia &middot; averbel1@cuc.edu.co &middot; 1 de noviembre de 2026</p>
 </header>
 
-<p>SpaceWases envía texto entre dos dispositivos usando solo sonido: uno convierte el mensaje en tonos audibles y el otro los escucha con el micrófono y los vuelve a convertir en texto. Este documento explica cómo lo hace la web publicada en https://spacewases.vercel.app, desde que alguien pulsa Enviar hasta que el mensaje aparece en el otro dispositivo. Describe la versión con 3 bytes por símbolo y turnos automáticos, con los valores que usa el código.</p>
+<p>Space Waves envía texto entre dos dispositivos usando solo sonido: uno convierte el mensaje en tonos audibles y el otro los escucha con el micrófono y los vuelve a convertir en texto. Este documento explica cómo lo hace la web publicada en https://space-waves-cuc.vercel.app, desde que alguien pulsa Enviar hasta que el mensaje aparece en el otro dispositivo. Describe la versión con 3 bytes por símbolo y turnos automáticos, con los valores que usa el código.</p>
 
 <h2>1. Visión general</h2>
 <p>La aplicación es una página estática: no tiene servidor ni base de datos, y los mensajes no pasan por internet. Vercel solo entrega los archivos; después, todo ocurre en el navegador de cada dispositivo. Los mensajes viajan únicamente por el aire de la sala.</p>
@@ -83,12 +83,12 @@
 <tbody>
 <tr><td><code>index.html</code>, <code>style.css</code></td><td>Estructura y aspecto: pestañas Ajustes, Mensajes y Espectro, con la disposición de Waver.</td></tr>
 <tr><td><code>app.js</code></td><td>Interfaz: botones, historial, reproducción del sonido, permiso del micrófono, espectro y coordinación de los demás hilos.</td></tr>
-<tr><td><code>spacewases.js</code></td><td>El módem: Reed–Solomon, tramas, cifrado, modulación y recepción. No toca la página, por eso corre también en Node para las pruebas.</td></tr>
+<tr><td><code>spacewaves.js</code></td><td>El módem: Reed–Solomon, tramas, cifrado, modulación y recepción. No toca la página, por eso corre también en Node para las pruebas.</td></tr>
 <tr><td><code>captura.js</code></td><td>Corre en el hilo de audio: agrupa el sonido del micrófono en bloques de 4096 muestras.</td></tr>
 <tr><td><code>receptor.js</code></td><td>Corre en un hilo aparte (<code>Worker</code>): recibe el audio y ejecuta la recepción sin frenar la página.</td></tr>
 </tbody>
 </table>
-<p>La carpeta <code>Space Waves/spacewases/</code> contiene la misma lógica de módem en Python, con el mismo formato de señal, para las pruebas por aire, el banco de ruido y la línea de comandos. Un mensaje generado en uno se decodifica en el otro.</p>
+<p>La carpeta <code>Space Waves/spacewaves/</code> contiene la misma lógica de módem en Python, con el mismo formato de señal, para las pruebas por aire, el banco de ruido y la línea de comandos. Un mensaje generado en uno se decodifica en el otro.</p>
 
 <h2>2. Envío: del texto a los bytes</h2>
 <p class="k">Al pulsar Enviar, <code>app.js</code> convierte el texto a UTF-8 y llama a <code>send()</code>. Los bytes se empaquetan así:</p>

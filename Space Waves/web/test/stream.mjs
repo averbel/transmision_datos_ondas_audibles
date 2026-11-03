@@ -1,5 +1,5 @@
 // Pruebas del receptor en flujo: se le pasa el audio en trozos, como llega del microfono.
-import { send, StreamReceiver, LiveSession, SendQueue, ReplayGuard, Resampler, FS, CHIRP_LEN } from "../spacewases.js";
+import { send, StreamReceiver, LiveSession, SendQueue, ReplayGuard, Resampler, FS, CHIRP_LEN } from "../spacewaves.js";
 
 let passed = 0;
 let failed = 0;

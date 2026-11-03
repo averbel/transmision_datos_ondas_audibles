@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import numpy as np
 import sounddevice as sd
 
-from spacewases import api, frame, modem
+from spacewaves import api, frame, modem
 
 FS = modem.FS
 OUT, INP = 4, 1

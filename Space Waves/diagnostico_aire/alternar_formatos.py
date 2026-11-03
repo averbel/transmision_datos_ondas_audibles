@@ -24,7 +24,7 @@ def name(profile, gain, trial):
 
 def generate(code, folder):
     sys.path.insert(0, code)
-    from spacewases import send
+    from spacewaves import send
 
     folder = Path(folder)
     folder.mkdir(parents=True, exist_ok=True)

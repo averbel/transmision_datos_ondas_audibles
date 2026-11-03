@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from spacewases import api, frame, receive, send
+from spacewaves import api, frame, receive, send
 
 
 def _mensaje(n: int, seed: int = 1) -> bytes:
@@ -182,7 +182,7 @@ def test_mensajes_cortos_no_se_rellenan(size):
 
 def test_busqueda_de_alineacion_recupera_datos_adelantados():
     """Los datos llegan antes de lo que indica el chirp: el tramo hasta el fin se queda corto."""
-    from spacewases import modem
+    from spacewaves import modem
     msg = _mensaje(40, seed=31)
     signal = send(msg, None, "normal")
     # Quita 500 muestras justo despues del chirp: los datos llegan 500 muestras antes.
@@ -210,7 +210,7 @@ def test_repeticion_por_el_aire_con_clave():
 
 @pytest.mark.parametrize("frames", [2, 3, 6])
 def test_simbolos_de_varias_tramas(frames):
-    from spacewases import modem
+    from spacewaves import modem
     data = _mensaje(64, seed=40 + frames)
     signal = modem.modulate(data, frames=frames)
     symbols = -(-len(data) // modem.BYTES_PER_SYMBOL)
@@ -235,7 +235,7 @@ def _con_sala(signal, rt60=0.4, drr_db=0.0, seed=2):
 
 def test_varias_tramas_resisten_reverberacion():
     """Con una cola de sala de 0,4 s, una trama falla y varias tramas aguantan."""
-    from spacewases import modem
+    from spacewaves import modem
     data = _mensaje(200, seed=1)
 
     def errores(frames):
@@ -258,7 +258,7 @@ def _con_eco(signal, delay, gain):
 
 
 def test_prefijo_ciclico_resiste_eco():
-    from spacewases import modem
+    from spacewaves import modem
     data = _mensaje(200, seed=31)
     delay, gain = 100, 1.0
 
@@ -271,7 +271,7 @@ def test_prefijo_ciclico_resiste_eco():
 
 
 def test_sin_chirp_final_decodifica_por_la_longitud():
-    from spacewases import modem
+    from spacewaves import modem
     msg = _mensaje(16, seed=50)
     signal = send(msg, None, "fast")
     assert receive(signal[:-modem.CHIRP_LEN], None) == msg
@@ -279,7 +279,7 @@ def test_sin_chirp_final_decodifica_por_la_longitud():
 
 def test_fin_falso_no_corta_el_mensaje():
     """Un chirp invertido dentro de los datos no debe impedir decodificar."""
-    from spacewases import modem
+    from spacewaves import modem
     msg = _mensaje(16, seed=51)
     signal = send(msg, None, "robust").astype(np.float64)[:-modem.CHIRP_LEN]
     falso = modem._chirp()[::-1]
@@ -292,7 +292,7 @@ def test_fin_falso_no_corta_el_mensaje():
 
 def test_chirp_debil_se_detecta_sobre_ruido():
     """Entre el umbral nuevo (0,12) y el anterior (0,25), como los chirps debiles por aire."""
-    from spacewases import modem
+    from spacewaves import modem
     rng = np.random.default_rng(52)
     msg = _mensaje(16, seed=52)
     signal = send(msg, None, "robust").astype(np.float64)
@@ -306,7 +306,7 @@ def test_chirp_debil_se_detecta_sobre_ruido():
 
 
 def test_ruido_no_supera_el_umbral_de_inicio():
-    from spacewases import modem
+    from spacewaves import modem
     rng = np.random.default_rng(53)
     window = 2 * modem.CHIRP_LEN + 4096
     best = max(modem._find_chirp(rng.normal(0, 0.1, window))[1] for _ in range(50))
@@ -318,7 +318,7 @@ def test_mensaje_vacio():
 
 
 def test_as_bytes_no_reinterpreta_ceros_y_unos():
-    from spacewases import modem
+    from spacewaves import modem
     assert modem._as_bytes([0, 1]) == b"\x00\x01"
     assert modem._as_bytes([1, 0, 1]) == b"\x01\x00\x01"
 
@@ -335,7 +335,7 @@ def test_senal_int16():
 
 
 def test_cli_ida_y_vuelta(tmp_path, capsysbinary):
-    from spacewases import cli
+    from spacewaves import cli
     wav = str(tmp_path / "t.wav")
     assert cli.main(["encode", "hola mundo", wav, "--key", "K"]) == 0
     assert cli.main(["decode", wav, "--key", "K"]) == 0
@@ -344,7 +344,7 @@ def test_cli_ida_y_vuelta(tmp_path, capsysbinary):
 
 
 def test_cli_wav_invalido(tmp_path):
-    from spacewases import cli
+    from spacewaves import cli
     assert cli.main(["decode", str(tmp_path / "no_existe.wav")]) == 1
 
 
@@ -359,14 +359,14 @@ def _escribe_wav(path, data, channels=1, width=2, rate=48000):
 
 @pytest.mark.parametrize("width, rate", [(1, 48000), (2, 44100)])
 def test_cli_rechaza_formato(tmp_path, width, rate):
-    from spacewases import cli
+    from spacewaves import cli
     path = tmp_path / "x.wav"
     _escribe_wav(path, bytes(2000), width=width, rate=rate)
     assert cli.main(["decode", str(path)]) == 1
 
 
 def test_cli_lee_wav_estereo(tmp_path, capsysbinary):
-    from spacewases import cli
+    from spacewaves import cli
     pcm = (send(b"estereo", None, "fast") * 32767).astype("<i2")
     path = tmp_path / "s.wav"
     _escribe_wav(path, np.stack([pcm, pcm], axis=1).tobytes(), channels=2)
@@ -400,7 +400,7 @@ def test_trama_invalida(plain):
 
 
 def test_silencio_no_sincroniza():
-    from spacewases import modem
+    from spacewaves import modem
     assert modem.demodulate(np.zeros(48000)) is None
     assert modem.synchronize(np.zeros(0)) is None
     assert modem.synchronize(np.zeros(10)) is None
@@ -408,7 +408,7 @@ def test_silencio_no_sincroniza():
 
 
 def test_modular_vacio_y_datos_uint8():
-    from spacewases import modem
+    from spacewaves import modem
     assert modem.demodulate(modem.modulate(b"")) == b""
     data = np.frombuffer(b"\x01\x02\x03", dtype=np.uint8)
     assert modem.demodulate(modem.modulate(data)) == b"\x01\x02\x03"

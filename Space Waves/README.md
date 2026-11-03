@@ -1,19 +1,19 @@
-# SpaceWases
+# Space Waves
 
 Módem acústico propio en Python (solo `numpy` y la biblioteca estándar) para enviar datos por sonido con altavoz y micrófono. Código escrito desde cero; ggwave (MIT, Georgi Gerganov) se tomó como referencia para el diseño; no se copió código de él.
 
 ## Qué incluye
 
-- `spacewases/rs.py`: Reed-Solomon sobre GF(256).
-- `spacewases/modem.py`: modulación MFSK a 48 kHz con sincronía por chirp: 6 tonos a la vez, uno por cada grupo contiguo de 16 bins de 46,875 Hz desde 1875 Hz, que llevan 3 bytes por símbolo. Cada símbolo dura varias tramas de 1024 muestras (6 en `robust`, 3 en `normal` y `fast`): la primera hace de guarda frente a la reverberación y el receptor suma las demás, como ggwave.
-- `spacewases/frame.py`: tramas con cabecera, HMAC-SHA256 truncado a 4 bytes, fragmentación y protección Reed-Solomon.
-- `spacewases/api.py`: `send` y `receive`, con perfiles `robust`, `normal` y `fast`.
-- `spacewases/cli.py`: codificar y decodificar archivos WAV.
+- `spacewaves/rs.py`: Reed-Solomon sobre GF(256).
+- `spacewaves/modem.py`: modulación MFSK a 48 kHz con sincronía por chirp: 6 tonos a la vez, uno por cada grupo contiguo de 16 bins de 46,875 Hz desde 1875 Hz, que llevan 3 bytes por símbolo. Cada símbolo dura varias tramas de 1024 muestras (6 en `robust`, 3 en `normal` y `fast`): la primera hace de guarda frente a la reverberación y el receptor suma las demás, como ggwave.
+- `spacewaves/frame.py`: tramas con cabecera, HMAC-SHA256 truncado a 4 bytes, fragmentación y protección Reed-Solomon.
+- `spacewaves/api.py`: `send` y `receive`, con perfiles `robust`, `normal` y `fast`.
+- `spacewaves/cli.py`: codificar y decodificar archivos WAV.
 - `bench.py`: éxito frente a SNR con ruido gaussiano simulado; `prueba_aire.py`: prueba real altavoz → micrófono.
 
 ## Web
 
-`web/` es una página estática (sin dependencias ni compilación) con la disposición de Waver, la app de ggwave: pestañas Ajustes, Mensajes y Espectro; un historial con líneas `hora | Recv/Send | protocolo | texto`; una línea de estado (escuchando, recibiendo, enviando con barra de progreso), y la caja de envío abajo. Ajustes reúne el volumen, el protocolo, las repeticiones, la clave, los WAV y una prueba sin micrófono. El espectro muestra la cascada del micrófono. El audio del micrófono se captura con un `AudioWorklet` (`web/captura.js`), que no pierde muestras aunque la página esté ocupada, y se decodifica en un hilo aparte (`web/receptor.js`), que no congela la página; donde no hay Workers de módulo se decodifica en la propia página. `web/spacewases.js` es un port del Python, con el mismo formato de señal; se comprobó que cada lado decodifica lo que emite el otro.
+`web/` es una página estática (sin dependencias ni compilación) con la disposición de Waver, la app de ggwave: pestañas Ajustes, Mensajes y Espectro; un historial con líneas `hora | Recv/Send | protocolo | texto`; una línea de estado (escuchando, recibiendo, enviando con barra de progreso), y la caja de envío abajo. Ajustes reúne el volumen, el protocolo, las repeticiones, la clave, los WAV y una prueba sin micrófono. El espectro muestra la cascada del micrófono. El audio del micrófono se captura con un `AudioWorklet` (`web/captura.js`), que no pierde muestras aunque la página esté ocupada, y se decodifica en un hilo aparte (`web/receptor.js`), que no congela la página; donde no hay Workers de módulo se decodifica en la propia página. `web/spacewaves.js` es un port del Python, con el mismo formato de señal; se comprobó que cada lado decodifica lo que emite el otro.
 
 El receptor en vivo (`StreamReceiver`) detecta el chirp de inicio con un umbral bajo y lee el bloque de longitud, que descarta las falsas detecciones y dice dónde acaba el mensaje. Así decodifica aunque el chirp final llegue débil o no llegue, muestra el avance real y no se queda grabando en una falsa detección.
 
@@ -32,18 +32,18 @@ La página declara una política de seguridad de contenido que solo permite carg
 
 ### Publicar en Vercel
 
-Publicada en https://spacewases.vercel.app (proyecto `averbels-projects/spacewases`, sin conexión a GitHub: cada push no publica nada). Para publicar de nuevo, desde `web/`: `npx vercel deploy --prod`. `.vercelignore` deja fuera `test/`, y `vercel.json` añade cabeceras de seguridad (la misma política de contenido más `frame-ancestors 'none'`, `nosniff`, sin referer y micrófono solo para el propio sitio). En cada publicación hay que cambiar la versión `?v=` en `web/index.html` (cuatro veces), `web/app.js` (tres veces) y `web/receptor.js`, para que nadie se quede con un JS viejo en caché.
+Publicada en https://space-waves-cuc.vercel.app (proyecto `averbels-projects/space-waves-cuc`, sin conexión a GitHub: cada push no publica nada). Para publicar de nuevo, desde `web/`: `npx vercel deploy --prod`. `.vercelignore` deja fuera `test/`, y `vercel.json` añade cabeceras de seguridad (la misma política de contenido más `frame-ancestors 'none'`, `nosniff`, sin referer y micrófono solo para el propio sitio). En cada publicación hay que cambiar la versión `?v=` en `web/index.html` (cuatro veces), `web/app.js` (tres veces) y `web/receptor.js`, para que nadie se quede con un JS viejo en caché.
 
 ## Uso
 
 ```bash
 pip install -r requirements.txt
 python -m pytest -q
-python -m spacewases.cli encode "hola" salida.wav --profile robust
-python -m spacewases.cli decode salida.wav
+python -m spacewaves.cli encode "hola" salida.wav --profile robust
+python -m spacewaves.cli decode salida.wav
 ```
 
-La clave opcional se pasa con `--key` o, mejor, con la variable de entorno `SPACEWASES_KEY`, para que no quede en el historial ni en la lista de procesos.
+La clave opcional se pasa con `--key` o, mejor, con la variable de entorno `SPACEWAVES_KEY`, para que no quede en el historial ni en la lista de procesos.
 
 ## Resultados
 
